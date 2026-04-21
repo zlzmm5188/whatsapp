@@ -1,0 +1,51 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import {
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from "class-validator";
+import { UsersService } from "./users.service";
+import { JwtAuthGuard } from "../auth/jwt.guard";
+import { CurrentUser } from "../auth/current-user.decorator";
+
+class UpdateProfileDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(32)
+  nickname?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  bio?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  avatar?: string;
+}
+
+@UseGuards(JwtAuthGuard)
+@Controller("users")
+export class UsersController {
+  constructor(private readonly users: UsersService) {}
+
+  @Get("search")
+  search(@CurrentUser() me: string, @Query("q") q: string) {
+    return this.users.search(me, q ?? "");
+  }
+
+  @Patch("me")
+  updateMe(@CurrentUser() me: string, @Body() dto: UpdateProfileDto) {
+    return this.users.updateProfile(me, dto);
+  }
+}

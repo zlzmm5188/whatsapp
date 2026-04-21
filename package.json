@@ -1,0 +1,19 @@
+{
+  "name": "whatsapp-im",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A WeChat-like IM built as a pnpm monorepo",
+  "packageManager": "pnpm@9.15.1",
+  "scripts": {
+    "build:shared": "pnpm --filter @im/shared run build",
+    "dev": "pnpm run build:shared && pnpm -r --parallel --filter '!@im/shared' run dev",
+    "dev:server": "pnpm run build:shared && pnpm --filter @im/server run dev",
+    "dev:web": "pnpm run build:shared && pnpm --filter @im/web run dev",
+    "build": "pnpm run build:shared && pnpm -r --filter '!@im/shared' run build",
+    "lint": "pnpm -r --filter '!@im/shared' run lint",
+    "typecheck": "pnpm run build:shared && pnpm -r --filter '!@im/shared' run typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}
