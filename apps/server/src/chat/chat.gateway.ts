@@ -23,14 +23,11 @@ interface AuthedSocket extends Socket {
   data: { userId: string };
 }
 
-@WebSocketGateway({
-  cors: {
-    origin: (process.env.CORS_ORIGIN ?? "http://localhost:5173")
-      .split(",")
-      .map((o) => o.trim()),
-    credentials: true,
-  },
-})
+// NOTE: CORS for Socket.IO is configured in main.ts via a custom IoAdapter,
+// because `@WebSocketGateway({ cors })` is evaluated at class-decoration time
+// — which happens during module import, BEFORE ConfigModule.forRoot() loads
+// `.env`, so `process.env.CORS_ORIGIN` would always be undefined here.
+@WebSocketGateway()
 export class ChatGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
@@ -114,17 +111,17 @@ export class ChatGateway
         payload.content.trim(),
         payload.type ?? "text",
       );
-      // deliver to receiver
-      this.server.to(`user:${payload.receiverId}`).emit(SocketEvents.NewMessage, {
-        ...msg,
-        clientId: payload.clientId,
-      });
-      // echo to sender (including other tabs/devices) with clientId so the
-      // optimistic bubble can be reconciled.
-      this.server.to(`user:${userId}`).emit(SocketEvents.NewMessage, {
-        ...msg,
-        clientId: payload.clientId,
-      });
+      // Deliver to receiver + echo to sender's other tabs/devices in a single
+      // emit. Socket.IO deduplicates rooms internally, so if for any reason
+      // both rooms resolve to the same socket set, each socket still only
+      // gets one copy. clientId lets the sender reconcile the optimistic
+      // bubble.
+      this.server
+        .to([`user:${payload.receiverId}`, `user:${userId}`])
+        .emit(SocketEvents.NewMessage, {
+          ...msg,
+          clientId: payload.clientId,
+        });
       return { ok: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : "send failed";
