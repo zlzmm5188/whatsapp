@@ -20,6 +20,14 @@ export default defineConfig({
         target: "http://localhost:3001",
         changeOrigin: true,
       },
+      // Uploaded media is served at /uploads (outside the /api prefix) by
+      // ServeStaticModule in dev, so the dev proxy has to forward it too —
+      // otherwise image <img src> and file <a href> 404 against the Vite
+      // server.
+      "/uploads": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+      },
       "/socket.io": {
         target: "http://localhost:3001",
         ws: true,

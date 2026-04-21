@@ -63,6 +63,16 @@ export class MessagesService {
     if (type !== "text" && type !== "emoji" && !payload.mediaUrl) {
       throw new ForbiddenException("media message requires mediaUrl");
     }
+    // Never trust a client-provided mediaUrl: it must be a relative path
+    // produced by our own upload endpoint, otherwise a malicious client can
+    // send arbitrary external URLs or `data:` URIs through the socket and we
+    // would happily render them in message bubbles.
+    if (
+      payload.mediaUrl &&
+      !/^\/uploads\/[A-Za-z0-9._-]+$/.test(payload.mediaUrl)
+    ) {
+      throw new ForbiddenException("invalid mediaUrl");
+    }
 
     const hasReceiver = !!payload.receiverId;
     const hasGroup = !!payload.groupId;

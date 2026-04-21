@@ -101,11 +101,10 @@ defineProps<{
 }>();
 
 function resolveMedia(url: string): string {
-  // Media URLs returned by the server start with "/uploads/…". When served
-  // through the Vite dev proxy, keep them relative so they go through /api.
-  // In production we just return the URL unchanged (server serves uploads).
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  if (url.startsWith("/uploads/")) return url;
+  // Media URLs returned by the server are relative paths under /uploads/.
+  // In dev, Vite's proxy (see vite.config.ts) forwards /uploads to the
+  // backend at :3001; in prod the backend serves them directly. Either way
+  // we just return the URL unchanged.
   return url;
 }
 

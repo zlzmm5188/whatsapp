@@ -18,6 +18,14 @@ import { JwtAuthGuard } from "../auth/jwt.guard";
 const MAX_SIZE = 20 * 1024 * 1024;
 const UPLOAD_ROOT = join(process.cwd(), "uploads");
 
+// Block mime types that the browser will execute in the app's origin.
+// With ServeStaticModule and extension-derived MIMEs, an uploaded .html or
+// .svg can run JS in our origin and steal the JWT from localStorage, so we
+// refuse them at the upload boundary. The extension check covers clients
+// that lie about Content-Type.
+const BLOCKED_MIME = /^(text\/html|application\/xhtml|image\/svg)/i;
+const BLOCKED_EXT = /\.(html?|xhtml|svg|mhtml)$/i;
+
 if (!existsSync(UPLOAD_ROOT)) {
   mkdirSync(UPLOAD_ROOT, { recursive: true });
 }
@@ -37,6 +45,16 @@ export class UploadController {
         },
       }),
       limits: { fileSize: MAX_SIZE },
+      fileFilter: (_req, file, cb) => {
+        if (
+          BLOCKED_MIME.test(file.mimetype) ||
+          BLOCKED_EXT.test(file.originalname)
+        ) {
+          cb(new BadRequestException("file type not allowed"), false);
+          return;
+        }
+        cb(null, true);
+      },
     }),
   )
   upload(
