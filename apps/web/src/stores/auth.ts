@@ -62,8 +62,8 @@ export const useAuthStore = defineStore("auth", {
     },
     async updateProfile(payload: {
       nickname?: string;
-      bio?: string;
-      avatar?: string;
+      bio?: string | null;
+      avatar?: string | null;
     }) {
       const user = await api.updateMe(payload);
       this.user = user;

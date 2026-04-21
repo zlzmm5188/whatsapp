@@ -98,10 +98,13 @@ async function save() {
   saving.value = true;
   feedback.value = "";
   try {
+    // nickname is required on the server; only send it when non-empty.
+    // For bio/avatar, map "" -> null so the server clears the stored value
+    // (Prisma: null = set to null, undefined = skip).
     await auth.updateProfile({
       nickname: form.nickname.trim() || undefined,
-      avatar: form.avatar.trim() || undefined,
-      bio: form.bio.trim() || undefined,
+      avatar: form.avatar.trim() === "" ? null : form.avatar.trim(),
+      bio: form.bio.trim() === "" ? null : form.bio.trim(),
     });
     feedback.value = "已保存";
     feedbackError.value = false;

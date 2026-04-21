@@ -31,12 +31,18 @@ export class UsersService {
 
   async updateProfile(
     userId: string,
-    data: { nickname?: string; bio?: string; avatar?: string },
+    data: {
+      nickname?: string;
+      bio?: string | null;
+      avatar?: string | null;
+    },
   ): Promise<PublicUser> {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: {
         nickname: data.nickname,
+        // Prisma treats `null` as "set to null" and `undefined` as "skip", so
+        // passing these through lets the caller explicitly clear bio/avatar.
         bio: data.bio,
         avatar: data.avatar,
       },
