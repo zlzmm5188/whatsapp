@@ -24,13 +24,11 @@ interface AuthedSocket extends Socket {
   data: { userId: string };
 }
 
+// NOTE: CORS for Socket.IO is configured in main.ts via a custom IoAdapter,
+// because `@WebSocketGateway({ cors })` is evaluated at class-decoration time
+// — which happens during module import, BEFORE ConfigModule.forRoot() loads
+// `.env`, so `process.env.CORS_ORIGIN` would always be undefined here.
 @WebSocketGateway({
-  cors: {
-    origin: (process.env.CORS_ORIGIN ?? "http://localhost:5173")
-      .split(",")
-      .map((o) => o.trim()),
-    credentials: true,
-  },
   maxHttpBufferSize: 2 * 1024 * 1024, // 2 MiB — media is uploaded via HTTP; socket carries URLs only
 })
 export class ChatGateway
@@ -118,19 +116,21 @@ export class ChatGateway
     try {
       const msg = await this.messages.send(userId, payload);
       if (msg.receiverId) {
-        // DM: push to receiver + echo to sender's own sessions.
+        // DM: deliver to receiver + echo to sender's other tabs/devices in a
+        // single emit. Socket.IO deduplicates room membership, so each
+        // socket gets exactly one copy even if both rooms resolve to the
+        // same connection. clientId lets the sender reconcile the optimistic
+        // bubble.
         this.server
-          .to(`user:${msg.receiverId}`)
+          .to([`user:${msg.receiverId}`, `user:${userId}`])
           .emit(SocketEvents.NewMessage, {
             ...msg,
             clientId: payload.clientId,
           });
-        this.server.to(`user:${userId}`).emit(SocketEvents.NewMessage, {
-          ...msg,
-          clientId: payload.clientId,
-        });
       } else if (msg.groupId) {
-        // Group: push to the group room (members joined on connect).
+        // Group: push to the group room (members joined on connect). Room
+        // membership is per-socket, so the sender's own sessions also
+        // receive it through this one emit.
         this.server.to(`group:${msg.groupId}`).emit(SocketEvents.NewMessage, {
           ...msg,
           clientId: payload.clientId,
