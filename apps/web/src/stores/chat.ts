@@ -149,7 +149,13 @@ export const useChatStore = defineStore("chat", {
           this.conversations = this.conversations.filter(
             (c) => c.group?.id !== detail.id,
           );
-          delete this.messagesByKey[groupKey(detail.id)];
+          const key = groupKey(detail.id);
+          delete this.messagesByKey[key];
+          // Also drop the historyLoaded flag so that if the user is re-added
+          // later, openGroup() will refetch history instead of short-
+          // circuiting on the stale flag (messagesByKey was just deleted, so
+          // the chat would otherwise render empty until a page refresh).
+          this.historyLoaded.delete(key);
         }
       });
 
