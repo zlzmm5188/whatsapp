@@ -190,10 +190,15 @@ export class GroupsService {
         "owner cannot leave; delete the group instead",
       );
     }
+    // Target must actually be a member — otherwise a stale leave/remove
+    // request would silently no-op and still broadcast a "members changed"
+    // event with no change.
+    if (!group.members.some((m) => m.userId === userId)) {
+      throw new BadRequestException("user is not a member of this group");
+    }
     await this.prisma.groupMember.deleteMany({
       where: { groupId, userId },
     });
-    this.chat.removeUserFromGroup(userId, groupId);
 
     const detail = await this.prisma.group.findUnique({
       where: { id: groupId },
@@ -204,7 +209,11 @@ export class GroupsService {
     });
     if (!detail) throw new NotFoundException("group missing after update");
     const dto = toGroupDetail(detail);
+    // Emit BEFORE pulling the removed user out of the group room, otherwise
+    // they leave the room before the "members changed" event arrives and miss
+    // their own removal notification.
     this.chat.emitToGroup(groupId, SocketEvents.GroupMembersChanged, dto);
+    this.chat.removeUserFromGroup(userId, groupId);
     return dto;
   }
 

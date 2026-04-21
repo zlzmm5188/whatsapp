@@ -58,7 +58,9 @@ export class MessagesService {
     if (type === "text" && !content) {
       throw new ForbiddenException("empty message");
     }
-    if (type !== "text" && !payload.mediaUrl) {
+    // "text" and "emoji" are content-only; only real media types
+    // (image/file/audio/video) require a mediaUrl.
+    if (type !== "text" && type !== "emoji" && !payload.mediaUrl) {
       throw new ForbiddenException("media message requires mediaUrl");
     }
 
