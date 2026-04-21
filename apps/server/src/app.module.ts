@@ -10,6 +10,7 @@ import { ChatModule } from "./chat/chat.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { GroupsModule } from "./groups/groups.module";
 import { UploadModule } from "./upload/upload.module";
+import { MomentsModule } from "./moments/moments.module";
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { UploadModule } from "./upload/upload.module";
     MessagesModule,
     ChatModule,
     UploadModule,
+    MomentsModule,
   ],
 })
 export class AppModule {}

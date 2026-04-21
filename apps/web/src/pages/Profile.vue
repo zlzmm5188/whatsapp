@@ -67,11 +67,13 @@ import { reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { useChatStore } from "../stores/chat";
+import { useMomentsStore } from "../stores/moments";
 import { errorMessage } from "../api/http";
 import Avatar from "../components/Avatar.vue";
 
 const auth = useAuthStore();
 const chat = useChatStore();
+const moments = useMomentsStore();
 const router = useRouter();
 
 const form = reactive({
@@ -119,6 +121,7 @@ async function save() {
 function logout() {
   auth.logout();
   chat.reset();
+  moments.reset();
   router.replace({ name: "login" });
 }
 </script>

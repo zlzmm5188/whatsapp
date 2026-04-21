@@ -3,9 +3,13 @@ import type {
   AuthResponse,
   ChatMessage,
   Conversation,
+  CreateMomentCommentPayload,
+  CreateMomentPayload,
   FriendRequestDTO,
   GroupDetail,
   GroupSummary,
+  MomentCommentDTO,
+  MomentDTO,
   PublicUser,
   UploadedFile,
 } from "@im/shared";
@@ -162,6 +166,69 @@ export const api = {
     const { data } = await http.post<UploadedFile>("/upload", form, {
       headers: { "Content-Type": "multipart/form-data" },
     });
+    return data;
+  },
+
+  // ----- Moments (朋友圈) -----
+  async momentsFeed(take = 20, before?: string): Promise<MomentDTO[]> {
+    const { data } = await http.get<MomentDTO[]>("/moments", {
+      params: { take, before },
+    });
+    return data;
+  },
+  async myMoments(take = 20, before?: string): Promise<MomentDTO[]> {
+    const { data } = await http.get<MomentDTO[]>("/moments/mine", {
+      params: { take, before },
+    });
+    return data;
+  },
+  async userMoments(
+    userId: string,
+    take = 20,
+    before?: string,
+  ): Promise<MomentDTO[]> {
+    const { data } = await http.get<MomentDTO[]>(`/moments/user/${userId}`, {
+      params: { take, before },
+    });
+    return data;
+  },
+  async getMoment(id: string): Promise<MomentDTO> {
+    const { data } = await http.get<MomentDTO>(`/moments/${id}`);
+    return data;
+  },
+  async createMoment(payload: CreateMomentPayload): Promise<MomentDTO> {
+    const { data } = await http.post<MomentDTO>("/moments", payload);
+    return data;
+  },
+  async deleteMoment(id: string): Promise<{ ok: true }> {
+    const { data } = await http.delete<{ ok: true }>(`/moments/${id}`);
+    return data;
+  },
+  async likeMoment(id: string): Promise<MomentDTO> {
+    const { data } = await http.post<MomentDTO>(`/moments/${id}/like`);
+    return data;
+  },
+  async unlikeMoment(id: string): Promise<MomentDTO> {
+    const { data } = await http.delete<MomentDTO>(`/moments/${id}/like`);
+    return data;
+  },
+  async commentMoment(
+    id: string,
+    payload: CreateMomentCommentPayload,
+  ): Promise<MomentCommentDTO> {
+    const { data } = await http.post<MomentCommentDTO>(
+      `/moments/${id}/comments`,
+      payload,
+    );
+    return data;
+  },
+  async deleteMomentComment(
+    id: string,
+    commentId: string,
+  ): Promise<{ ok: true }> {
+    const { data } = await http.delete<{ ok: true }>(
+      `/moments/${id}/comments/${commentId}`,
+    );
     return data;
   },
 };

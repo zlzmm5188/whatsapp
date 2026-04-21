@@ -53,6 +53,7 @@ const chat = useChatStore();
 const items = [
   { name: "chats", label: "聊天", icon: "💬" },
   { name: "contacts", label: "通讯录", icon: "👥" },
+  { name: "moments", label: "朋友圈", icon: "🌄" },
   { name: "profile", label: "我", icon: "🙂" },
 ];
 

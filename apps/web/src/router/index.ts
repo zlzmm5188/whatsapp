@@ -14,6 +14,7 @@ const GroupChatWindow = () => import("../pages/GroupChatWindow.vue");
 const Contacts = () => import("../pages/Contacts.vue");
 const Profile = () => import("../pages/Profile.vue");
 const EmptyChat = () => import("../pages/EmptyChat.vue");
+const Moments = () => import("../pages/Moments.vue");
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -51,6 +52,7 @@ export const router = createRouter({
           ],
         },
         { path: "contacts", name: "contacts", component: Contacts },
+        { path: "moments", name: "moments", component: Moments },
         { path: "me", name: "profile", component: Profile },
       ],
     },
