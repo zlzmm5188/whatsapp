@@ -41,6 +41,10 @@ interface State {
   groups: GroupSummary[];
   groupDetails: Record<string, GroupDetail>;
   messagesByKey: Record<string, ChatMessage[]>;
+  // Tracks which ChatKeys have had their full history fetched. `messagesByKey`
+  // alone can't answer this because `handleIncoming` may pre-populate a key
+  // with a single socket-delivered message before the chat is ever opened.
+  historyLoaded: Set<ChatKey>;
   onlineUsers: Set<string>;
   // For DMs typing keys are `dm:<peerId>`; for groups we store the typing
   // user id prefixed as `group:<groupId>:<userId>` so multiple users can type
@@ -57,6 +61,7 @@ export const useChatStore = defineStore("chat", {
     groups: [],
     groupDetails: {},
     messagesByKey: {},
+    historyLoaded: new Set(),
     onlineUsers: new Set(),
     typingKeys: new Set(),
     activeKey: null,
@@ -179,17 +184,21 @@ export const useChatStore = defineStore("chat", {
     async openDM(peerId: string) {
       const key = dmKey(peerId);
       this.activeKey = key;
-      if (!this.messagesByKey[key]) {
+      // Track history load separately from presence of messages:
+      // `handleIncoming` can populate `messagesByKey[key]` with just a
+      // socket-delivered message before the chat is ever opened, so the
+      // mere existence of the key does NOT mean history has been fetched.
+      if (!this.historyLoaded.has(key)) {
         const history = await api.historyDM(peerId, 50);
-        // Messages may have been pushed into this key by `handleIncoming`
-        // while the history request was in flight — merge them in instead of
-        // overwriting, so socket-delivered messages aren't silently dropped.
+        // Messages pushed in by `handleIncoming` during the fetch must be
+        // merged (dedup by id), not overwritten.
         const arrived: ChatMessage[] = this.messagesByKey[key] ?? [];
         const ids = new Set(history.map((m) => m.id));
         this.messagesByKey[key] = [
           ...history,
           ...arrived.filter((m) => !ids.has(m.id)),
         ];
+        this.historyLoaded.add(key);
       }
       const meId = this.meId();
       const list = this.messagesByKey[key] ?? [];
@@ -208,16 +217,16 @@ export const useChatStore = defineStore("chat", {
     async openGroup(groupId: string) {
       const key = groupKey(groupId);
       this.activeKey = key;
-      if (!this.messagesByKey[key]) {
+      // See openDM — gate on historyLoaded, not on presence of messages.
+      if (!this.historyLoaded.has(key)) {
         const history = await api.historyGroup(groupId, 50);
-        // Merge any messages that arrived over the socket while awaiting
-        // history (see openDM for rationale).
         const arrived: ChatMessage[] = this.messagesByKey[key] ?? [];
         const ids = new Set(history.map((m) => m.id));
         this.messagesByKey[key] = [
           ...history,
           ...arrived.filter((m) => !ids.has(m.id)),
         ];
+        this.historyLoaded.add(key);
       }
       if (!this.groupDetails[groupId]) {
         await this.loadGroupDetail(groupId);
@@ -368,6 +377,7 @@ export const useChatStore = defineStore("chat", {
       this.groups = [];
       this.groupDetails = {};
       this.messagesByKey = {};
+      this.historyLoaded = new Set();
       this.onlineUsers = new Set();
       this.typingKeys = new Set();
       this.activeKey = null;

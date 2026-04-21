@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -169,13 +170,23 @@ export class MessagesService {
     before?: string,
   ): Promise<ChatMessage[]> {
     const limit = Math.min(Math.max(take, 1), 200);
+    let beforeDate: Date | undefined;
+    if (before) {
+      const d = new Date(before);
+      if (Number.isNaN(d.getTime())) {
+        // Prisma would happily accept an Invalid Date object and blow up
+        // when serializing, yielding a 500. Surface a proper 400 instead.
+        throw new BadRequestException("invalid 'before' date");
+      }
+      beforeDate = d;
+    }
     const rows = await this.prisma.message.findMany({
       where: {
         OR: [
           { senderId: meId, receiverId: peerId },
           { senderId: peerId, receiverId: meId },
         ],
-        ...(before ? { createdAt: { lt: new Date(before) } } : {}),
+        ...(beforeDate ? { createdAt: { lt: beforeDate } } : {}),
       },
       orderBy: { createdAt: "desc" },
       take: limit,
@@ -192,10 +203,18 @@ export class MessagesService {
     const isMember = await this.groups.isMember(meId, groupId);
     if (!isMember) throw new ForbiddenException("not a group member");
     const limit = Math.min(Math.max(take, 1), 200);
+    let beforeDate: Date | undefined;
+    if (before) {
+      const d = new Date(before);
+      if (Number.isNaN(d.getTime())) {
+        throw new BadRequestException("invalid 'before' date");
+      }
+      beforeDate = d;
+    }
     const rows = await this.prisma.message.findMany({
       where: {
         groupId,
-        ...(before ? { createdAt: { lt: new Date(before) } } : {}),
+        ...(beforeDate ? { createdAt: { lt: beforeDate } } : {}),
       },
       orderBy: { createdAt: "desc" },
       take: limit,
