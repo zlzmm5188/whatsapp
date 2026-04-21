@@ -1,0 +1,29 @@
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+coverage/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+apps/server/.env
+apps/web/.env
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Prisma / SQLite dev artifacts
+apps/server/prisma/dev.db
+apps/server/prisma/dev.db-journal
+apps/server/prisma/migrations/dev/
