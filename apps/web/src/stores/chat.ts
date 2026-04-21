@@ -100,7 +100,17 @@ export const useChatStore = defineStore("chat", {
     async openChat(peerId: string) {
       this.activePeerId = peerId;
       if (!this.messagesByPeer[peerId]) {
-        this.messagesByPeer[peerId] = await api.history(peerId, 50);
+        const history = await api.history(peerId, 50);
+        // A NewMessage socket event can land during the history await and
+        // cause handleIncoming to populate messagesByPeer[peerId] — merge
+        // those in instead of overwriting, dedup by id, so socket-delivered
+        // messages aren't silently lost.
+        const arrived: ChatMessage[] = this.messagesByPeer[peerId] ?? [];
+        const ids = new Set(history.map((m) => m.id));
+        this.messagesByPeer[peerId] = [
+          ...history,
+          ...arrived.filter((m) => !ids.has(m.id)),
+        ];
       }
       // mark read locally and on server
       const meId = this.meId();
