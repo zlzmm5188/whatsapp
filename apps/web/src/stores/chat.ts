@@ -180,7 +180,16 @@ export const useChatStore = defineStore("chat", {
       const key = dmKey(peerId);
       this.activeKey = key;
       if (!this.messagesByKey[key]) {
-        this.messagesByKey[key] = await api.historyDM(peerId, 50);
+        const history = await api.historyDM(peerId, 50);
+        // Messages may have been pushed into this key by `handleIncoming`
+        // while the history request was in flight — merge them in instead of
+        // overwriting, so socket-delivered messages aren't silently dropped.
+        const arrived: ChatMessage[] = this.messagesByKey[key] ?? [];
+        const ids = new Set(history.map((m) => m.id));
+        this.messagesByKey[key] = [
+          ...history,
+          ...arrived.filter((m) => !ids.has(m.id)),
+        ];
       }
       const meId = this.meId();
       const list = this.messagesByKey[key] ?? [];
@@ -200,7 +209,15 @@ export const useChatStore = defineStore("chat", {
       const key = groupKey(groupId);
       this.activeKey = key;
       if (!this.messagesByKey[key]) {
-        this.messagesByKey[key] = await api.historyGroup(groupId, 50);
+        const history = await api.historyGroup(groupId, 50);
+        // Merge any messages that arrived over the socket while awaiting
+        // history (see openDM for rationale).
+        const arrived: ChatMessage[] = this.messagesByKey[key] ?? [];
+        const ids = new Set(history.map((m) => m.id));
+        this.messagesByKey[key] = [
+          ...history,
+          ...arrived.filter((m) => !ids.has(m.id)),
+        ];
       }
       if (!this.groupDetails[groupId]) {
         await this.loadGroupDetail(groupId);
