@@ -55,25 +55,40 @@ export class FriendsService {
     const already = await this.areFriends(meId, target.id);
     if (already) throw new ConflictException("already friends");
 
+    // Look up any prior request in either direction, regardless of status.
+    // The @@unique([fromId, toId]) constraint means we must update-in-place
+    // instead of creating a new row if one already exists.
     const existing = await this.prisma.friendRequest.findFirst({
       where: {
         OR: [
           { fromId: meId, toId: target.id },
           { fromId: target.id, toId: meId },
         ],
-        status: "pending",
       },
     });
-    if (existing) throw new ConflictException("request already pending");
+    if (existing && existing.status === "pending") {
+      throw new ConflictException("request already pending");
+    }
 
-    const req = await this.prisma.friendRequest.create({
-      data: {
-        fromId: meId,
-        toId: target.id,
-        message: message ?? null,
-      },
-      include: { from: true, to: true },
-    });
+    const mineToThem =
+      existing && existing.fromId === meId && existing.toId === target.id
+        ? existing
+        : null;
+
+    const req = mineToThem
+      ? await this.prisma.friendRequest.update({
+          where: { id: mineToThem.id },
+          data: { status: "pending", message: message ?? null },
+          include: { from: true, to: true },
+        })
+      : await this.prisma.friendRequest.create({
+          data: {
+            fromId: meId,
+            toId: target.id,
+            message: message ?? null,
+          },
+          include: { from: true, to: true },
+        });
 
     return {
       id: req.id,
@@ -123,6 +138,9 @@ export class FriendsService {
     });
     if (!req) throw new NotFoundException("request not found");
     if (req.toId !== meId) throw new BadRequestException("not your request");
+    if (req.status !== "pending") {
+      throw new BadRequestException("request is not pending");
+    }
     await this.prisma.friendRequest.update({
       where: { id: req.id },
       data: { status: "rejected" },

@@ -103,9 +103,12 @@ export const useChatStore = defineStore("chat", {
         this.messagesByPeer[peerId] = await api.history(peerId, 50);
       }
       // mark read locally and on server
+      const meId = this.meId();
       const list = this.messagesByPeer[peerId] ?? [];
       for (const m of list) {
-        if (m.receiverId !== peerId) continue;
+        if (m.senderId === peerId && m.receiverId === meId && !m.read) {
+          m.read = true;
+        }
       }
       await api.markRead(peerId);
       const conv = this.conversations.find((c) => c.peer.id === peerId);
