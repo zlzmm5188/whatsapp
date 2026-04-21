@@ -94,6 +94,12 @@ export const SocketEvents = {
   // group events (server -> client)
   GroupCreated: "group:created",
   GroupMembersChanged: "group:members:changed",
+  // moment events (server -> client)
+  MomentCreated: "moment:created",
+  MomentDeleted: "moment:deleted",
+  MomentLikeChanged: "moment:like:changed",
+  MomentCommentAdded: "moment:comment:added",
+  MomentCommentDeleted: "moment:comment:deleted",
 } as const;
 
 export interface SendMessagePayload {
@@ -136,4 +142,68 @@ export interface PeerTypingPayload {
   // or group (groupId is set so ChatWindow can filter)
   groupId?: string;
   typing: boolean;
+}
+
+// ---------------- Moments (朋友圈) ----------------
+
+export interface MomentImageDTO {
+  id: string;
+  url: string;
+  order: number;
+}
+
+export interface MomentCommentDTO {
+  id: string;
+  momentId: string;
+  content: string;
+  createdAt: string;
+  user: PublicUser;
+  replyToUser: PublicUser | null;
+}
+
+export interface MomentDTO {
+  id: string;
+  content: string;
+  createdAt: string;
+  author: PublicUser;
+  images: MomentImageDTO[];
+  likes: PublicUser[]; // users who liked it
+  likeCount: number;
+  likedByMe: boolean;
+  comments: MomentCommentDTO[];
+  commentCount: number;
+}
+
+export interface CreateMomentPayload {
+  content: string;
+  imageUrls?: string[]; // paths under /uploads/*
+}
+
+export interface CreateMomentCommentPayload {
+  content: string;
+  replyToUserId?: string;
+}
+
+export interface MomentLikeChangedPayload {
+  momentId: string;
+  liked: boolean;
+  userId: string;
+  user: PublicUser;
+  likeCount: number;
+}
+
+export interface MomentCommentAddedPayload {
+  momentId: string;
+  comment: MomentCommentDTO;
+  commentCount: number;
+}
+
+export interface MomentCommentDeletedPayload {
+  momentId: string;
+  commentId: string;
+  commentCount: number;
+}
+
+export interface MomentDeletedPayload {
+  momentId: string;
 }

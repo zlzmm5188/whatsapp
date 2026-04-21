@@ -30,6 +30,10 @@ model User {
   ownedGroups        Group[]         @relation("GroupOwner")
   groupMemberships   GroupMember[]
   groupMessageReads  GroupMessageRead[]
+  moments            Moment[]
+  momentLikes        MomentLike[]
+  momentComments     MomentComment[]          @relation("MomentCommentAuthor")
+  momentCommentReplies MomentComment[]        @relation("MomentCommentReplyTo")
 }
 
 model Friendship {
@@ -127,5 +131,67 @@ model GroupMessageRead {
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([messageId, userId])
+  @@index([userId])
+}
+
+// Moments = friend-visible feed (朋友圈). Text + optional images, likes,
+// and flat comments (with optional reply-to-user for inline @ replies).
+model Moment {
+  id        String   @id @default(cuid())
+  authorId  String
+  content   String   @default("")
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+
+  author   User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  images   MomentImage[]
+  likes    MomentLike[]
+  comments MomentComment[]
+
+  @@index([authorId, createdAt])
+  @@index([createdAt])
+}
+
+model MomentImage {
+  id       String @id @default(cuid())
+  momentId String
+  url      String
+  // 0-based display order inside the moment.
+  order    Int    @default(0)
+
+  moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+
+  @@index([momentId])
+}
+
+model MomentLike {
+  id        String   @id @default(cuid())
+  momentId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([momentId, userId])
+  @@index([userId])
+}
+
+model MomentComment {
+  id            String   @id @default(cuid())
+  momentId      String
+  userId        String
+  // Optional: when a comment is posted as an @-reply to another commenter,
+  // this points at the user being replied to (not at the comment id — the
+  // frontend renders inline "@nickname" style).
+  replyToUserId String?
+  content       String
+  createdAt     DateTime @default(now())
+
+  moment      Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  user        User   @relation("MomentCommentAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  replyToUser User?  @relation("MomentCommentReplyTo", fields: [replyToUserId], references: [id], onDelete: SetNull)
+
+  @@index([momentId, createdAt])
   @@index([userId])
 }
