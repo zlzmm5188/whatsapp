@@ -1,4 +1,4 @@
-import { Logger } from "@nestjs/common";
+import { Inject, Logger, forwardRef } from "@nestjs/common";
 import {
   ConnectedSocket,
   MessageBody,
@@ -12,6 +12,7 @@ import { Server, Socket } from "socket.io";
 import { AuthService } from "../auth/auth.service";
 import { FriendsService } from "../friends/friends.service";
 import { MessagesService } from "../messages/messages.service";
+import { GroupsService } from "../groups/groups.service";
 import {
   MarkReadPayload,
   SendMessagePayload,
@@ -27,7 +28,9 @@ interface AuthedSocket extends Socket {
 // because `@WebSocketGateway({ cors })` is evaluated at class-decoration time
 // — which happens during module import, BEFORE ConfigModule.forRoot() loads
 // `.env`, so `process.env.CORS_ORIGIN` would always be undefined here.
-@WebSocketGateway()
+@WebSocketGateway({
+  maxHttpBufferSize: 2 * 1024 * 1024, // 2 MiB — media is uploaded via HTTP; socket carries URLs only
+})
 export class ChatGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
@@ -41,7 +44,10 @@ export class ChatGateway
   constructor(
     private readonly auth: AuthService,
     private readonly friends: FriendsService,
+    @Inject(forwardRef(() => MessagesService))
     private readonly messages: MessagesService,
+    @Inject(forwardRef(() => GroupsService))
+    private readonly groups: GroupsService,
   ) {}
 
   async handleConnection(socket: Socket): Promise<void> {
@@ -62,6 +68,12 @@ export class ChatGateway
     }
     (socket as AuthedSocket).data.userId = userId;
     socket.join(`user:${userId}`);
+
+    // Join group rooms so the user receives group events without extra round-trips.
+    const groupIds = await this.groups.myGroupIds(userId);
+    for (const gid of groupIds) {
+      socket.join(`group:${gid}`);
+    }
 
     const wasOnline = this.sockets.has(userId);
     let set = this.sockets.get(userId);
@@ -101,27 +113,29 @@ export class ChatGateway
     @MessageBody() payload: SendMessagePayload,
   ): Promise<{ ok: boolean; error?: string }> {
     const userId = (socket as AuthedSocket).data.userId;
-    if (!payload?.receiverId || !payload?.content?.trim()) {
-      return { ok: false, error: "invalid payload" };
-    }
     try {
-      const msg = await this.messages.send(
-        userId,
-        payload.receiverId,
-        payload.content.trim(),
-        payload.type ?? "text",
-      );
-      // Deliver to receiver + echo to sender's other tabs/devices in a single
-      // emit. Socket.IO deduplicates rooms internally, so if for any reason
-      // both rooms resolve to the same socket set, each socket still only
-      // gets one copy. clientId lets the sender reconcile the optimistic
-      // bubble.
-      this.server
-        .to([`user:${payload.receiverId}`, `user:${userId}`])
-        .emit(SocketEvents.NewMessage, {
+      const msg = await this.messages.send(userId, payload);
+      if (msg.receiverId) {
+        // DM: deliver to receiver + echo to sender's other tabs/devices in a
+        // single emit. Socket.IO deduplicates room membership, so each
+        // socket gets exactly one copy even if both rooms resolve to the
+        // same connection. clientId lets the sender reconcile the optimistic
+        // bubble.
+        this.server
+          .to([`user:${msg.receiverId}`, `user:${userId}`])
+          .emit(SocketEvents.NewMessage, {
+            ...msg,
+            clientId: payload.clientId,
+          });
+      } else if (msg.groupId) {
+        // Group: push to the group room (members joined on connect). Room
+        // membership is per-socket, so the sender's own sessions also
+        // receive it through this one emit.
+        this.server.to(`group:${msg.groupId}`).emit(SocketEvents.NewMessage, {
           ...msg,
           clientId: payload.clientId,
         });
+      }
       return { ok: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : "send failed";
@@ -135,13 +149,18 @@ export class ChatGateway
     @MessageBody() payload: MarkReadPayload,
   ): Promise<{ ok: boolean }> {
     const userId = (socket as AuthedSocket).data.userId;
-    if (!payload?.peerId) return { ok: false };
-    await this.messages.markRead(userId, payload.peerId);
-    // tell the peer that their messages to me have been read
-    this.server
-      .to(`user:${payload.peerId}`)
-      .emit(SocketEvents.MessageRead, { peerId: userId });
-    return { ok: true };
+    if (payload?.peerId) {
+      await this.messages.markRead(userId, payload.peerId);
+      this.server
+        .to(`user:${payload.peerId}`)
+        .emit(SocketEvents.MessageRead, { peerId: userId });
+      return { ok: true };
+    }
+    if (payload?.groupId) {
+      await this.messages.markGroupRead(userId, payload.groupId);
+      return { ok: true };
+    }
+    return { ok: false };
   }
 
   @SubscribeMessage(SocketEvents.Typing)
@@ -150,11 +169,51 @@ export class ChatGateway
     @MessageBody() payload: TypingPayload,
   ): void {
     const userId = (socket as AuthedSocket).data.userId;
-    if (!payload?.peerId) return;
-    this.server.to(`user:${payload.peerId}`).emit(SocketEvents.PeerTyping, {
-      peerId: userId,
-      typing: !!payload.typing,
-    });
+    if (payload?.peerId) {
+      this.server.to(`user:${payload.peerId}`).emit(SocketEvents.PeerTyping, {
+        peerId: userId,
+        typing: !!payload.typing,
+      });
+      return;
+    }
+    if (payload?.groupId) {
+      this.server
+        .to(`group:${payload.groupId}`)
+        .except(`user:${userId}`)
+        .emit(SocketEvents.PeerTyping, {
+          peerId: userId,
+          groupId: payload.groupId,
+          typing: !!payload.typing,
+        });
+    }
+  }
+
+  // --- Helpers used by GroupsService to emit on membership changes ---
+
+  emitToUser(userId: string, event: string, data: unknown): void {
+    this.server.to(`user:${userId}`).emit(event, data);
+  }
+
+  emitToGroup(groupId: string, event: string, data: unknown): void {
+    this.server.to(`group:${groupId}`).emit(event, data);
+  }
+
+  joinUserToGroup(userId: string, groupId: string): void {
+    const sockets = this.sockets.get(userId);
+    if (!sockets) return;
+    for (const sid of sockets) {
+      const s = this.server.sockets.sockets.get(sid);
+      s?.join(`group:${groupId}`);
+    }
+  }
+
+  removeUserFromGroup(userId: string, groupId: string): void {
+    const sockets = this.sockets.get(userId);
+    if (!sockets) return;
+    for (const sid of sockets) {
+      const s = this.server.sockets.sockets.get(sid);
+      s?.leave(`group:${groupId}`);
+    }
   }
 
   private async broadcastPresence(

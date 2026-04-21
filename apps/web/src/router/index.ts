@@ -10,6 +10,7 @@ const Register = () => import("../pages/Register.vue");
 const AppShell = () => import("../pages/AppShell.vue");
 const Chats = () => import("../pages/Chats.vue");
 const ChatWindow = () => import("../pages/ChatWindow.vue");
+const GroupChatWindow = () => import("../pages/GroupChatWindow.vue");
 const Contacts = () => import("../pages/Contacts.vue");
 const Profile = () => import("../pages/Profile.vue");
 const EmptyChat = () => import("../pages/EmptyChat.vue");
@@ -39,6 +40,12 @@ export const router = createRouter({
               path: "c/:peerId",
               name: "chat",
               component: ChatWindow,
+              props: true,
+            },
+            {
+              path: "g/:groupId",
+              name: "group-chat",
+              component: GroupChatWindow,
               props: true,
             },
           ],
