@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { FriendsService } from "../friends/friends.service";
 import { toPublicUser } from "../users/user.mapper";
@@ -50,13 +54,23 @@ export class MessagesService {
     before?: string,
   ): Promise<ChatMessage[]> {
     const limit = Math.min(Math.max(take, 1), 200);
+    let beforeDate: Date | undefined;
+    if (before) {
+      const d = new Date(before);
+      if (Number.isNaN(d.getTime())) {
+        // Prisma would happily accept an Invalid Date object and blow up
+        // when serializing, yielding a 500. Surface a proper 400 instead.
+        throw new BadRequestException("invalid 'before' date");
+      }
+      beforeDate = d;
+    }
     const rows = await this.prisma.message.findMany({
       where: {
         OR: [
           { senderId: meId, receiverId: peerId },
           { senderId: peerId, receiverId: meId },
         ],
-        ...(before ? { createdAt: { lt: new Date(before) } } : {}),
+        ...(beforeDate ? { createdAt: { lt: beforeDate } } : {}),
       },
       orderBy: { createdAt: "desc" },
       take: limit,

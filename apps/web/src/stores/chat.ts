@@ -15,6 +15,7 @@ interface State {
   conversations: Conversation[];
   friends: PublicUser[];
   messagesByPeer: Record<string, ChatMessage[]>;
+  historyLoaded: Set<string>;
   onlineUsers: Set<string>;
   typingPeers: Set<string>;
   activePeerId: string | null;
@@ -26,6 +27,7 @@ export const useChatStore = defineStore("chat", {
     conversations: [],
     friends: [],
     messagesByPeer: {},
+    historyLoaded: new Set(),
     onlineUsers: new Set(),
     typingPeers: new Set(),
     activePeerId: null,
@@ -99,18 +101,21 @@ export const useChatStore = defineStore("chat", {
 
     async openChat(peerId: string) {
       this.activePeerId = peerId;
-      if (!this.messagesByPeer[peerId]) {
+      // Track history load separately from presence of messages: `handleIncoming`
+      // can populate `messagesByPeer[peerId]` with just a socket-delivered
+      // message before the chat is ever opened, so the mere existence of the
+      // key does NOT mean history has been fetched.
+      if (!this.historyLoaded.has(peerId)) {
         const history = await api.history(peerId, 50);
-        // A NewMessage socket event can land during the history await and
-        // cause handleIncoming to populate messagesByPeer[peerId] — merge
-        // those in instead of overwriting, dedup by id, so socket-delivered
-        // messages aren't silently lost.
+        // Messages pushed in by `handleIncoming` during the fetch must be
+        // merged (dedup by id), not overwritten.
         const arrived: ChatMessage[] = this.messagesByPeer[peerId] ?? [];
         const ids = new Set(history.map((m) => m.id));
         this.messagesByPeer[peerId] = [
           ...history,
           ...arrived.filter((m) => !ids.has(m.id)),
         ];
+        this.historyLoaded.add(peerId);
       }
       // mark read locally and on server
       const meId = this.meId();
@@ -218,6 +223,7 @@ export const useChatStore = defineStore("chat", {
       this.conversations = [];
       this.friends = [];
       this.messagesByPeer = {};
+      this.historyLoaded = new Set();
       this.onlineUsers = new Set();
       this.typingPeers = new Set();
       this.activePeerId = null;
