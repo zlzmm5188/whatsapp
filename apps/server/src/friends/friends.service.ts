@@ -55,40 +55,42 @@ export class FriendsService {
     const already = await this.areFriends(meId, target.id);
     if (already) throw new ConflictException("already friends");
 
-    // Look up any prior request in either direction, regardless of status.
-    // The @@unique([fromId, toId]) constraint means we must update-in-place
-    // instead of creating a new row if one already exists.
-    const existing = await this.prisma.friendRequest.findFirst({
-      where: {
-        OR: [
-          { fromId: meId, toId: target.id },
-          { fromId: target.id, toId: meId },
-        ],
-      },
-    });
-    if (existing && existing.status === "pending") {
+    // Prior rows may exist in both directions after repeated add/reject/remove
+    // cycles. Look up EACH direction independently so we always know whether
+    // "my" direction needs to be updated vs. created — and whether the other
+    // direction currently has a pending request from the target.
+    const [mineToThem, theirToMe] = await Promise.all([
+      this.prisma.friendRequest.findUnique({
+        where: { fromId_toId: { fromId: meId, toId: target.id } },
+      }),
+      this.prisma.friendRequest.findUnique({
+        where: { fromId_toId: { fromId: target.id, toId: meId } },
+      }),
+    ]);
+    if (mineToThem && mineToThem.status === "pending") {
       throw new ConflictException("request already pending");
     }
+    if (theirToMe && theirToMe.status === "pending") {
+      throw new ConflictException(
+        "the other user already sent you a request; accept it instead",
+      );
+    }
 
-    const mineToThem =
-      existing && existing.fromId === meId && existing.toId === target.id
-        ? existing
-        : null;
-
-    const req = mineToThem
-      ? await this.prisma.friendRequest.update({
-          where: { id: mineToThem.id },
-          data: { status: "pending", message: message ?? null },
-          include: { from: true, to: true },
-        })
-      : await this.prisma.friendRequest.create({
-          data: {
-            fromId: meId,
-            toId: target.id,
-            message: message ?? null,
-          },
-          include: { from: true, to: true },
-        });
+    // Atomic create-or-update on the (fromId, toId) unique key. This is safe
+    // even when a row in the opposite direction exists.
+    const req = await this.prisma.friendRequest.upsert({
+      where: { fromId_toId: { fromId: meId, toId: target.id } },
+      create: {
+        fromId: meId,
+        toId: target.id,
+        message: message ?? null,
+      },
+      update: {
+        status: "pending",
+        message: message ?? null,
+      },
+      include: { from: true, to: true },
+    });
 
     return {
       id: req.id,
