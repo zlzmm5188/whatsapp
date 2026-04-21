@@ -4,20 +4,49 @@ import { getSocket } from "../api/socket";
 import type {
   ChatMessage,
   Conversation,
+  GroupDetail,
+  GroupSummary,
+  MessageType,
   NewMessagePayload,
+  PeerTypingPayload,
   PresencePayload,
   PublicUser,
   SendMessagePayload,
 } from "@im/shared";
 import { SocketEvents } from "@im/shared";
 
+// A key used to store messages / typing state per chat target.
+// `dm:<peerId>` for direct chats, `group:<groupId>` for group chats.
+export type ChatKey = `dm:${string}` | `group:${string}`;
+
+export function dmKey(peerId: string): ChatKey {
+  return `dm:${peerId}`;
+}
+export function groupKey(groupId: string): ChatKey {
+  return `group:${groupId}`;
+}
+
+interface SendArgs {
+  content: string;
+  type?: MessageType;
+  mediaUrl?: string;
+  mediaName?: string;
+  mediaSize?: number;
+  mediaMime?: string;
+}
+
 interface State {
   conversations: Conversation[];
   friends: PublicUser[];
-  messagesByPeer: Record<string, ChatMessage[]>;
+  groups: GroupSummary[];
+  groupDetails: Record<string, GroupDetail>;
+  messagesByKey: Record<string, ChatMessage[]>;
   onlineUsers: Set<string>;
-  typingPeers: Set<string>;
-  activePeerId: string | null;
+  // For DMs typing keys are `dm:<peerId>`; for groups we store the typing
+  // user id prefixed as `group:<groupId>:<userId>` so multiple users can type
+  // simultaneously.
+  typingKeys: Set<string>;
+  activeKey: ChatKey | null;
   bound: boolean;
 }
 
@@ -25,29 +54,47 @@ export const useChatStore = defineStore("chat", {
   state: (): State => ({
     conversations: [],
     friends: [],
-    messagesByPeer: {},
+    groups: [],
+    groupDetails: {},
+    messagesByKey: {},
     onlineUsers: new Set(),
-    typingPeers: new Set(),
-    activePeerId: null,
+    typingKeys: new Set(),
+    activeKey: null,
     bound: false,
   }),
   getters: {
-    conversationFor:
-      (s) =>
-      (peerId: string): Conversation | undefined =>
-        s.conversations.find((c) => c.peer.id === peerId),
     messagesFor:
       (s) =>
-      (peerId: string): ChatMessage[] =>
-        s.messagesByPeer[peerId] ?? [],
+      (key: ChatKey): ChatMessage[] =>
+        s.messagesByKey[key] ?? [],
     isOnline:
       (s) =>
       (userId: string): boolean =>
         s.onlineUsers.has(userId),
-    isTyping:
+    isDMTyping:
       (s) =>
       (peerId: string): boolean =>
-        s.typingPeers.has(peerId),
+        s.typingKeys.has(`dm:${peerId}`),
+    groupTypingUserIds:
+      (s) =>
+      (groupId: string): string[] => {
+        const prefix = `group:${groupId}:`;
+        const out: string[] = [];
+        for (const k of s.typingKeys) {
+          if (k.startsWith(prefix)) out.push(k.slice(prefix.length));
+        }
+        return out;
+      },
+    dmConversation:
+      (s) =>
+      (peerId: string): Conversation | undefined =>
+        s.conversations.find((c) => c.kind === "dm" && c.peer?.id === peerId),
+    groupConversation:
+      (s) =>
+      (groupId: string): Conversation | undefined =>
+        s.conversations.find(
+          (c) => c.kind === "group" && c.group?.id === groupId,
+        ),
   },
   actions: {
     bindSocket() {
@@ -59,138 +106,232 @@ export const useChatStore = defineStore("chat", {
         this.handleIncoming(msg);
       });
       socket.on(SocketEvents.MessageRead, ({ peerId }: { peerId: string }) => {
-        // peerId = the user who just read our messages to them
-        const list = this.messagesByPeer[peerId];
+        // peerId = the user who just read our DMs to them
+        const list = this.messagesByKey[dmKey(peerId)];
         if (!list) return;
         for (const m of list) {
           if (m.receiverId === peerId) m.read = true;
         }
       });
-      socket.on(
-        SocketEvents.PeerTyping,
-        ({ peerId, typing }: { peerId: string; typing: boolean }) => {
-          if (typing) this.typingPeers.add(peerId);
-          else this.typingPeers.delete(peerId);
-          // trigger reactivity
-          this.typingPeers = new Set(this.typingPeers);
-        },
-      );
+      socket.on(SocketEvents.PeerTyping, (p: PeerTypingPayload) => {
+        const k = p.groupId
+          ? `group:${p.groupId}:${p.peerId}`
+          : `dm:${p.peerId}`;
+        if (p.typing) this.typingKeys.add(k);
+        else this.typingKeys.delete(k);
+        // trigger reactivity
+        this.typingKeys = new Set(this.typingKeys);
+      });
       socket.on(SocketEvents.Presence, ({ userId, online }: PresencePayload) => {
         if (online) this.onlineUsers.add(userId);
         else this.onlineUsers.delete(userId);
         this.onlineUsers = new Set(this.onlineUsers);
+      });
+      socket.on(SocketEvents.GroupCreated, (detail: GroupDetail) => {
+        this.groupDetails[detail.id] = detail;
+        if (!this.groups.some((g) => g.id === detail.id)) {
+          this.groups = [detail, ...this.groups];
+        }
+        // Refresh conversations so the new group shows up in the chat list.
+        void this.refreshConversations();
+      });
+      socket.on(SocketEvents.GroupMembersChanged, (detail: GroupDetail) => {
+        this.groupDetails[detail.id] = detail;
+        // If I was removed, drop the group locally.
+        const me = this.meId();
+        if (me && !detail.members.some((m) => m.userId === me)) {
+          this.groups = this.groups.filter((g) => g.id !== detail.id);
+          this.conversations = this.conversations.filter(
+            (c) => c.group?.id !== detail.id,
+          );
+          delete this.messagesByKey[groupKey(detail.id)];
+        }
       });
 
       this.bound = true;
     },
 
     async loadAll() {
-      const [convs, fs] = await Promise.all([
+      const [convs, fs, gs] = await Promise.all([
         api.conversations(),
         api.friends(),
+        api.groups(),
       ]);
       this.conversations = convs;
       this.friends = fs;
+      this.groups = gs;
     },
 
     async refreshConversations() {
       this.conversations = await api.conversations();
     },
 
-    async openChat(peerId: string) {
-      this.activePeerId = peerId;
-      if (!this.messagesByPeer[peerId]) {
-        this.messagesByPeer[peerId] = await api.history(peerId, 50);
+    async refreshGroups() {
+      this.groups = await api.groups();
+    },
+
+    async loadGroupDetail(groupId: string): Promise<GroupDetail> {
+      const detail = await api.group(groupId);
+      this.groupDetails[groupId] = detail;
+      return detail;
+    },
+
+    async openDM(peerId: string) {
+      const key = dmKey(peerId);
+      this.activeKey = key;
+      if (!this.messagesByKey[key]) {
+        this.messagesByKey[key] = await api.historyDM(peerId, 50);
       }
-      // mark read locally and on server
       const meId = this.meId();
-      const list = this.messagesByPeer[peerId] ?? [];
+      const list = this.messagesByKey[key] ?? [];
       for (const m of list) {
         if (m.senderId === peerId && m.receiverId === meId && !m.read) {
           m.read = true;
         }
       }
-      await api.markRead(peerId);
-      const conv = this.conversations.find((c) => c.peer.id === peerId);
+      await api.markReadDM(peerId);
+      const conv = this.dmConversation(peerId);
       if (conv) conv.unreadCount = 0;
-      // notify via socket so sender sees "read"
       const socket = getSocket();
       socket?.emit(SocketEvents.MarkRead, { peerId });
     },
 
-    closeChat() {
-      this.activePeerId = null;
+    async openGroup(groupId: string) {
+      const key = groupKey(groupId);
+      this.activeKey = key;
+      if (!this.messagesByKey[key]) {
+        this.messagesByKey[key] = await api.historyGroup(groupId, 50);
+      }
+      if (!this.groupDetails[groupId]) {
+        await this.loadGroupDetail(groupId);
+      }
+      await api.markReadGroup(groupId);
+      const conv = this.groupConversation(groupId);
+      if (conv) conv.unreadCount = 0;
+      const socket = getSocket();
+      socket?.emit(SocketEvents.MarkRead, { groupId });
     },
 
-    sendText(peerId: string, content: string) {
+    closeChat() {
+      this.activeKey = null;
+    },
+
+    sendDM(peerId: string, args: SendArgs) {
       const socket = getSocket();
       if (!socket) return;
-      const clientId = `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const clientId = `c_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
       const payload: SendMessagePayload = {
         receiverId: peerId,
-        content,
-        type: "text",
+        content: args.content,
+        type: args.type ?? "text",
+        mediaUrl: args.mediaUrl,
+        mediaName: args.mediaName,
+        mediaSize: args.mediaSize,
+        mediaMime: args.mediaMime,
         clientId,
       };
       socket.emit(SocketEvents.SendMessage, payload);
     },
 
-    sendTyping(peerId: string, typing: boolean) {
+    sendGroup(groupId: string, args: SendArgs) {
+      const socket = getSocket();
+      if (!socket) return;
+      const clientId = `c_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      const payload: SendMessagePayload = {
+        groupId,
+        content: args.content,
+        type: args.type ?? "text",
+        mediaUrl: args.mediaUrl,
+        mediaName: args.mediaName,
+        mediaSize: args.mediaSize,
+        mediaMime: args.mediaMime,
+        clientId,
+      };
+      socket.emit(SocketEvents.SendMessage, payload);
+    },
+
+    sendTypingDM(peerId: string, typing: boolean) {
       const socket = getSocket();
       socket?.emit(SocketEvents.Typing, { peerId, typing });
+    },
+    sendTypingGroup(groupId: string, typing: boolean) {
+      const socket = getSocket();
+      socket?.emit(SocketEvents.Typing, { groupId, typing });
     },
 
     handleIncoming(msg: NewMessagePayload) {
       const meId = this.meId();
-      const peerId = msg.senderId === meId ? msg.receiverId : msg.senderId;
-      const list = this.messagesByPeer[peerId] ?? [];
+      let key: ChatKey;
+      let isGroup = false;
+      if (msg.groupId) {
+        key = groupKey(msg.groupId);
+        isGroup = true;
+      } else if (msg.senderId === meId) {
+        key = dmKey(msg.receiverId as string);
+      } else {
+        key = dmKey(msg.senderId);
+      }
+
+      const list = this.messagesByKey[key] ?? [];
       if (!list.some((m) => m.id === msg.id)) {
         list.push({
           id: msg.id,
           senderId: msg.senderId,
           receiverId: msg.receiverId,
+          groupId: msg.groupId,
           content: msg.content,
           type: msg.type,
+          mediaUrl: msg.mediaUrl,
+          mediaName: msg.mediaName,
+          mediaSize: msg.mediaSize,
+          mediaMime: msg.mediaMime,
           read: msg.read,
           createdAt: msg.createdAt,
         });
       }
-      this.messagesByPeer[peerId] = list;
+      this.messagesByKey[key] = list;
 
-      // update conversation preview / unread
-      const conv = this.conversations.find((c) => c.peer.id === peerId);
+      // Update matching conversation's lastMessage + unread count.
+      let conv: Conversation | undefined;
+      if (isGroup) {
+        conv = this.groupConversation(msg.groupId as string);
+      } else {
+        const peerId = msg.senderId === meId ? msg.receiverId : msg.senderId;
+        conv = this.dmConversation(peerId as string);
+      }
       if (conv) {
-        conv.lastMessage = {
-          id: msg.id,
-          senderId: msg.senderId,
-          receiverId: msg.receiverId,
-          content: msg.content,
-          type: msg.type,
-          read: msg.read,
-          createdAt: msg.createdAt,
-        };
-        if (msg.senderId !== meId && this.activePeerId !== peerId) {
+        conv.lastMessage = { ...msg };
+        const isMine = msg.senderId === meId;
+        const isActive = this.activeKey === key;
+        if (!isMine && !isActive) {
           conv.unreadCount += 1;
         }
         // resort
-        this.conversations = [
-          ...this.conversations.filter((c) => c.peer.id !== peerId),
-          conv,
-        ].sort((a, b) => {
+        this.conversations = [...this.conversations].sort((a, b) => {
           const ta = a.lastMessage ? Date.parse(a.lastMessage.createdAt) : 0;
           const tb = b.lastMessage ? Date.parse(b.lastMessage.createdAt) : 0;
           return tb - ta;
         });
       } else {
-        // unknown peer -> refresh conversations so it shows up
+        // unknown target -> refresh conversations so it shows up
         void this.refreshConversations();
       }
 
-      // if the chat is open and I'm the receiver, mark read immediately
-      if (msg.senderId !== meId && this.activePeerId === peerId) {
-        void api.markRead(peerId);
+      // if the chat is open and I'm not the sender, mark read immediately
+      if (msg.senderId !== meId && this.activeKey === key) {
         const socket = getSocket();
-        socket?.emit(SocketEvents.MarkRead, { peerId });
+        if (isGroup) {
+          void api.markReadGroup(msg.groupId as string);
+          socket?.emit(SocketEvents.MarkRead, { groupId: msg.groupId });
+        } else {
+          const peerId = msg.senderId;
+          void api.markReadDM(peerId);
+          socket?.emit(SocketEvents.MarkRead, { peerId });
+        }
       }
     },
 
@@ -207,10 +348,12 @@ export const useChatStore = defineStore("chat", {
     reset() {
       this.conversations = [];
       this.friends = [];
-      this.messagesByPeer = {};
+      this.groups = [];
+      this.groupDetails = {};
+      this.messagesByKey = {};
       this.onlineUsers = new Set();
-      this.typingPeers = new Set();
-      this.activePeerId = null;
+      this.typingKeys = new Set();
+      this.activeKey = null;
       this.bound = false;
     },
   },

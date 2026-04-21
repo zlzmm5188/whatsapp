@@ -22,8 +22,8 @@ export class MessagesController {
     return this.messages.conversations(me);
   }
 
-  @Get(":peerId")
-  history(
+  @Get("dm/:peerId")
+  historyDM(
     @CurrentUser() me: string,
     @Param("peerId") peerId: string,
     @Query("take", new DefaultValuePipe(50), ParseIntPipe) take: number,
@@ -32,8 +32,23 @@ export class MessagesController {
     return this.messages.history(me, peerId, take, before);
   }
 
-  @Post(":peerId/read")
-  markRead(@CurrentUser() me: string, @Param("peerId") peerId: string) {
+  @Get("group/:groupId")
+  historyGroup(
+    @CurrentUser() me: string,
+    @Param("groupId") groupId: string,
+    @Query("take", new DefaultValuePipe(50), ParseIntPipe) take: number,
+    @Query("before") before?: string,
+  ) {
+    return this.messages.groupHistory(me, groupId, take, before);
+  }
+
+  @Post("dm/:peerId/read")
+  markReadDM(@CurrentUser() me: string, @Param("peerId") peerId: string) {
     return this.messages.markRead(me, peerId);
+  }
+
+  @Post("group/:groupId/read")
+  markReadGroup(@CurrentUser() me: string, @Param("groupId") groupId: string) {
+    return this.messages.markGroupRead(me, groupId);
   }
 }
