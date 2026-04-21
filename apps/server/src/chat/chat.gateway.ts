@@ -10,6 +10,7 @@ import {
 } from "@nestjs/websockets";
 import { Server, Socket } from "socket.io";
 import { AuthService } from "../auth/auth.service";
+import { FriendsService } from "../friends/friends.service";
 import { MessagesService } from "../messages/messages.service";
 import {
   MarkReadPayload,
@@ -42,6 +43,7 @@ export class ChatGateway
 
   constructor(
     private readonly auth: AuthService,
+    private readonly friends: FriendsService,
     private readonly messages: MessagesService,
   ) {}
 
@@ -74,22 +76,26 @@ export class ChatGateway
 
     this.logger.log(`user ${userId} connected (${socket.id})`);
     if (!wasOnline) {
-      this.broadcastPresence(userId, true);
+      await this.broadcastPresence(userId, true);
     }
   }
 
-  handleDisconnect(socket: Socket): void {
+  async handleDisconnect(socket: Socket): Promise<void> {
     const userId = (socket as AuthedSocket).data?.userId;
     if (!userId) return;
     const set = this.sockets.get(userId);
+    let wentOffline = false;
     if (set) {
       set.delete(socket.id);
       if (set.size === 0) {
         this.sockets.delete(userId);
-        this.broadcastPresence(userId, false);
+        wentOffline = true;
       }
     }
     this.logger.log(`user ${userId} disconnected (${socket.id})`);
+    if (wentOffline) {
+      await this.broadcastPresence(userId, false);
+    }
   }
 
   @SubscribeMessage(SocketEvents.SendMessage)
@@ -154,7 +160,15 @@ export class ChatGateway
     });
   }
 
-  private broadcastPresence(userId: string, online: boolean): void {
-    this.server.emit(SocketEvents.Presence, { userId, online });
+  private async broadcastPresence(
+    userId: string,
+    online: boolean,
+  ): Promise<void> {
+    // Only notify this user's friends — not every connected socket. Also echo
+    // to the user's own sockets so their multi-tab sessions see a consistent
+    // self-presence.
+    const friends = await this.friends.friendIds(userId);
+    const rooms = [`user:${userId}`, ...friends.map((id) => `user:${id}`)];
+    this.server.to(rooms).emit(SocketEvents.Presence, { userId, online });
   }
 }

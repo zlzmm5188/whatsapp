@@ -158,6 +158,14 @@ export class FriendsService {
     return { ok: true };
   }
 
+  async friendIds(meId: string): Promise<string[]> {
+    const rows = await this.prisma.friendship.findMany({
+      where: { OR: [{ userAId: meId }, { userBId: meId }] },
+      select: { userAId: true, userBId: true },
+    });
+    return rows.map((r) => (r.userAId === meId ? r.userBId : r.userAId));
+  }
+
   async areFriends(a: string, b: string): Promise<boolean> {
     const [userAId, userBId] = [a, b].sort();
     const row = await this.prisma.friendship.findUnique({

@@ -30,8 +30,8 @@ export const api = {
   },
   async updateMe(payload: {
     nickname?: string;
-    bio?: string;
-    avatar?: string;
+    bio?: string | null;
+    avatar?: string | null;
   }): Promise<PublicUser> {
     const { data } = await http.patch<PublicUser>("/users/me", payload);
     return data;

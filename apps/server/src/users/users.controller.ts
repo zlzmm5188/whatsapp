@@ -11,6 +11,7 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from "class-validator";
 import { UsersService } from "./users.service";
 import { JwtAuthGuard } from "../auth/jwt.guard";
@@ -23,15 +24,18 @@ class UpdateProfileDto {
   @MaxLength(32)
   nickname?: string;
 
+  // `null` means "clear this field"; `undefined` means "don't touch it".
+  @ValidateIf((_, v) => v !== null)
   @IsOptional()
   @IsString()
   @MaxLength(256)
-  bio?: string;
+  bio?: string | null;
 
+  @ValidateIf((_, v) => v !== null)
   @IsOptional()
   @IsString()
   @MaxLength(512)
-  avatar?: string;
+  avatar?: string | null;
 }
 
 @UseGuards(JwtAuthGuard)
