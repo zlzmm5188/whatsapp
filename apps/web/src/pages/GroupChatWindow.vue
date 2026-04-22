@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ChevronLeft, MoreHorizontal } from "lucide-vue-next";
 import { useAuthStore } from "../stores/auth";
@@ -129,12 +129,16 @@ watch(
   },
 );
 
-// See ChatWindow: onDeactivated covers the KeepAlive-cached parent case.
+// See ChatWindow: onDeactivated clears activeKey when KeepAlive suspends
+// the parent Chats subtree; onActivated restores it when the user comes back.
 onBeforeUnmount(() => {
   chat.closeChat();
 });
 onDeactivated(() => {
   chat.closeChat();
+});
+onActivated(() => {
+  if (props.groupId) void chat.openGroup(props.groupId);
 });
 
 async function scrollToBottom() {

@@ -53,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ChevronLeft } from "lucide-vue-next";
 import { useAuthStore } from "../stores/auth";
@@ -109,6 +109,13 @@ onBeforeUnmount(() => {
 });
 onDeactivated(() => {
   chat.closeChat();
+});
+// Re-open the DM when the user swipes back into the chats tab (KeepAlive
+// keeps the component mounted, so the immediate watcher won't fire again
+// because peerId hasn't changed). openDM short-circuits on historyLoaded,
+// so this just restores activeKey and re-marks-read.
+onActivated(() => {
+  if (props.peerId) void chat.openDM(props.peerId);
 });
 
 async function scrollToBottom() {
