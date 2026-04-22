@@ -103,21 +103,20 @@ function isActive(name: string): boolean {
 // With <script setup> + @vitejs/plugin-vue on Vue 3.5, the component name
 // is inferred from the filename in PascalCase, so these strings must match
 // the .vue filenames (Chats.vue → "Chats"), NOT the lowercase route names.
-// Chat/group windows are intentionally excluded — each peer/group is its
-// own route and caching them all would leak memory over long sessions.
-const keepAliveNames = [
-  "Chats",
-  "EmptyChat",
-  "Contacts",
-  "Moments",
-  "Profile",
-];
+// EmptyChat / ChatWindow / GroupChatWindow are nested children of Chats and
+// are rendered by the inner <RouterView> inside Chats.vue — at the AppShell
+// level the component is always Chats for the whole chats-family, so they
+// MUST NOT be listed here and Chats MUST be keyed stably (see keepKey).
+const keepAliveNames = ["Chats", "Contacts", "Moments", "Profile"];
 
 function keepKey(r: RouteLocationNormalized): string {
-  // For chat/group windows we want a per-target key (different peer = new
-  // component instance + history fetch). For cached tabs a stable key keeps
-  // KeepAlive from re-mounting them.
-  if (r.name === "chat" || r.name === "group-chat") return r.fullPath;
+  // All chat-family routes (chats / chats-empty / chat / group-chat) resolve
+  // to the same AppShell-level component (Chats). Return a STABLE key for
+  // them so KeepAlive reuses one cached Chats instance instead of creating
+  // a fresh one per visited peer — that would be an unbounded memory leak
+  // and would also prevent ChatWindow from ever unmounting / calling
+  // chat.closeChat(), leaving activeKey stale and breaking unread counts.
+  if (r.matched.some((m) => m.name === "chats")) return "chats";
   return String(r.name ?? r.fullPath);
 }
 

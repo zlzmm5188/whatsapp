@@ -53,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ChevronLeft } from "lucide-vue-next";
 import { useAuthStore } from "../stores/auth";
@@ -99,7 +99,15 @@ watch(
   },
 );
 
+// Clear activeKey on both unmount (peer switch within /c/*) and deactivate
+// (whole Chats subtree put to sleep by KeepAlive when user leaves the chats
+// tab). Without onDeactivated the store's activeKey stays pointed at the
+// hidden chat, so incoming messages there would keep auto-mark-read and
+// their unreadCount would never increment.
 onBeforeUnmount(() => {
+  chat.closeChat();
+});
+onDeactivated(() => {
   chat.closeChat();
 });
 

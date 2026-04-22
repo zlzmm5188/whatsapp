@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ChevronLeft, MoreHorizontal } from "lucide-vue-next";
 import { useAuthStore } from "../stores/auth";
@@ -129,7 +129,11 @@ watch(
   },
 );
 
+// See ChatWindow: onDeactivated covers the KeepAlive-cached parent case.
 onBeforeUnmount(() => {
+  chat.closeChat();
+});
+onDeactivated(() => {
   chat.closeChat();
 });
 
