@@ -1,33 +1,38 @@
 <template>
-  <div class="p-3 bg-[#f5f5f5] border-t border-black/10 relative">
+  <div class="bg-white/90 backdrop-blur border-t border-black/5 pb-safe relative">
     <!-- Media preview row -->
     <div
       v-if="pendingFile"
-      class="mb-2 flex items-center gap-2 bg-white border border-black/10 rounded-lg px-3 py-2 text-sm"
+      class="mx-3 mt-2 flex items-center gap-2 bg-ink-100 rounded-xl px-3 py-2 text-sm"
     >
       <img
         v-if="pendingPreview"
         :src="pendingPreview"
         alt=""
-        class="w-10 h-10 object-cover rounded"
+        class="w-10 h-10 object-cover rounded-lg"
       />
-      <span v-else class="text-2xl">📎</span>
+      <div
+        v-else
+        class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-ink-500"
+      >
+        <FileIcon class="w-5 h-5" :stroke-width="1.75" />
+      </div>
       <div class="flex-1 min-w-0">
-        <div class="truncate">{{ pendingFile.name }}</div>
-        <div class="text-[11px] text-gray-400">
+        <div class="truncate text-ink-800">{{ pendingFile.name }}</div>
+        <div class="text-[11px] text-ink-400">
           {{ formatSize(pendingFile.size) }}
         </div>
       </div>
       <button
-        class="text-gray-400 hover:text-gray-600 text-lg leading-none px-2"
+        class="pressable w-7 h-7 rounded-full bg-white text-ink-500 flex items-center justify-center"
         type="button"
-        @click="clearFile"
         title="移除"
+        @click="clearFile"
       >
-        ×
+        <X class="w-4 h-4" :stroke-width="2" />
       </button>
       <button
-        class="px-3 py-1 rounded-lg bg-brand text-white text-xs"
+        class="pressable px-3 py-1.5 rounded-full bg-brand text-white text-xs font-medium disabled:opacity-50"
         :disabled="sending"
         type="button"
         @click="sendFile"
@@ -36,34 +41,34 @@
       </button>
     </div>
 
-    <div v-if="uploadError" class="mb-2 text-xs text-red-500">
+    <div v-if="uploadError" class="mx-3 mt-2 text-xs text-red-500">
       {{ uploadError }}
     </div>
 
-    <div class="flex items-end gap-2">
+    <div class="flex items-end gap-2 p-2 md:p-3">
       <button
         type="button"
-        class="w-9 h-9 flex-shrink-0 rounded-lg hover:bg-black/5 text-xl"
+        class="pressable w-10 h-10 flex-shrink-0 rounded-full hover:bg-ink-100 flex items-center justify-center text-ink-600"
         title="表情"
         @click="toggleEmoji"
       >
-        😀
+        <Smile class="w-[22px] h-[22px]" :stroke-width="1.75" />
       </button>
       <button
         type="button"
-        class="w-9 h-9 flex-shrink-0 rounded-lg hover:bg-black/5 text-xl"
+        class="pressable w-10 h-10 flex-shrink-0 rounded-full hover:bg-ink-100 flex items-center justify-center text-ink-600"
         title="图片"
         @click="pickImage"
       >
-        🖼️
+        <ImagePlus class="w-[22px] h-[22px]" :stroke-width="1.75" />
       </button>
       <button
         type="button"
-        class="w-9 h-9 flex-shrink-0 rounded-lg hover:bg-black/5 text-xl"
+        class="pressable w-10 h-10 flex-shrink-0 rounded-full hover:bg-ink-100 flex items-center justify-center text-ink-600"
         title="文件"
         @click="pickFile"
       >
-        📎
+        <Paperclip class="w-[22px] h-[22px]" :stroke-width="1.75" />
       </button>
       <input
         ref="imageInput"
@@ -82,35 +87,46 @@
       <textarea
         v-model="text"
         rows="1"
-        class="flex-1 resize-none bg-white rounded-xl px-3 py-2 text-[15px] focus:outline-none focus:ring-2 focus:ring-brand/30 max-h-40"
-        placeholder="输入消息，Enter 发送 / Shift+Enter 换行"
+        class="flex-1 resize-none bg-ink-100 rounded-2xl px-4 py-2.5 text-[15px] leading-snug focus:outline-none focus:ring-2 focus:ring-brand/20 max-h-40"
+        placeholder="输入消息"
         @keydown.enter.exact.prevent="sendText"
         @keydown.enter.shift.exact="() => { /* allow newline */ }"
         @input="onInput"
         @blur="stopTyping"
       />
       <button
-        class="px-4 py-2 rounded-xl bg-brand text-white text-sm font-medium hover:bg-brand-600 disabled:opacity-50"
+        class="pressable w-10 h-10 flex-shrink-0 rounded-full bg-brand text-white flex items-center justify-center disabled:opacity-40 disabled:bg-ink-300"
         :disabled="!text.trim()"
         type="button"
+        title="发送"
         @click="sendText"
       >
-        发送
+        <Send class="w-[18px] h-[18px]" :stroke-width="2" />
       </button>
     </div>
 
-    <div
-      v-if="showEmoji"
-      class="absolute bottom-16 left-3 z-10"
-      @click.stop
-    >
-      <EmojiPicker @pick="onEmojiPick" />
-    </div>
+    <Transition name="fade">
+      <div
+        v-if="showEmoji"
+        class="absolute bottom-[72px] left-3 z-10"
+        @click.stop
+      >
+        <EmojiPicker @pick="onEmojiPick" />
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from "vue";
+import {
+  Smile,
+  ImagePlus,
+  Paperclip,
+  Send,
+  X,
+  File as FileIcon,
+} from "lucide-vue-next";
 import EmojiPicker from "./EmojiPicker.vue";
 import { api } from "../api/endpoints";
 import { errorMessage } from "../api/http";
@@ -189,7 +205,6 @@ function toggleEmoji() {
 }
 
 function onEmojiPick(emoji: string) {
-  // Send as an "emoji" sticker-style bubble (bigger rendering).
   props.onSend({ content: emoji, type: "emoji" });
   showEmoji.value = false;
 }

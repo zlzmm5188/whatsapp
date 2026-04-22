@@ -1,128 +1,141 @@
 <template>
-  <div class="h-full flex flex-col bg-[#ededed]">
+  <div class="h-full flex flex-col bg-ink-100">
     <header
-      class="px-4 py-3 bg-white border-b border-black/5 flex items-center gap-3"
+      class="flex items-center gap-3 px-4 h-14 bg-glass border-b border-black/5 pt-safe"
     >
-      <h1 class="text-lg font-medium">朋友圈</h1>
+      <h1 class="text-[22px] font-semibold tracking-tight text-ink-800">
+        朋友圈
+      </h1>
       <button
         type="button"
-        class="ml-auto px-3 py-1.5 rounded-lg bg-brand text-white text-sm"
+        class="pressable ml-auto w-9 h-9 rounded-full bg-brand text-white flex items-center justify-center shadow-bubble"
+        :title="showComposer ? '收起' : '发布动态'"
         @click="showComposer = !showComposer"
       >
-        {{ showComposer ? "收起" : "发布" }}
+        <component
+          :is="showComposer ? X : Camera"
+          class="w-[18px] h-[18px]"
+          :stroke-width="2"
+        />
       </button>
     </header>
 
-    <div ref="scroller" class="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+    <div ref="scroller" class="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-3 pb-6">
       <!-- Composer -->
-      <section
-        v-if="showComposer"
-        class="bg-white border border-black/5 rounded-xl p-3"
-      >
-        <textarea
-          v-model="newContent"
-          rows="3"
-          placeholder="这一刻的想法…"
-          class="w-full resize-none bg-[#f7f7f7] rounded-lg px-3 py-2 text-[15px] focus:outline-none focus:ring-2 focus:ring-brand/30"
-        />
-
-        <div
-          v-if="pendingImages.length > 0"
-          class="mt-2 grid grid-cols-3 gap-1 max-w-md"
+      <Transition name="fade">
+        <section
+          v-if="showComposer"
+          class="bg-white rounded-2xl shadow-card p-3"
         >
+          <textarea
+            v-model="newContent"
+            rows="3"
+            placeholder="这一刻的想法…"
+            class="w-full resize-none bg-ink-100 rounded-xl px-3 py-2 text-[15px] focus:outline-none focus:ring-2 focus:ring-brand/20"
+          />
+
           <div
-            v-for="(img, i) in pendingImages"
-            :key="img.url"
-            class="relative aspect-square"
+            v-if="pendingImages.length > 0"
+            class="mt-2 grid grid-cols-3 gap-1.5 max-w-md"
           >
-            <img
-              :src="img.url"
-              class="w-full h-full object-cover rounded"
-            />
-            <button
-              type="button"
-              class="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white text-xs"
-              @click="removePendingImage(i)"
-              title="移除"
+            <div
+              v-for="(img, i) in pendingImages"
+              :key="img.url"
+              class="relative aspect-square group"
             >
-              ×
+              <img
+                :src="img.url"
+                class="w-full h-full object-cover rounded-lg"
+              />
+              <button
+                type="button"
+                class="pressable absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
+                title="移除"
+                @click="removePendingImage(i)"
+              >
+                <X class="w-3.5 h-3.5" :stroke-width="2.25" />
+              </button>
+            </div>
+            <button
+              v-if="pendingImages.length < 9"
+              type="button"
+              class="pressable aspect-square rounded-lg border border-dashed border-ink-300 text-ink-400 flex items-center justify-center hover:border-brand hover:text-brand"
+              :disabled="uploading"
+              @click="pickImage"
+            >
+              <Plus class="w-6 h-6" :stroke-width="1.75" />
             </button>
           </div>
-          <button
-            v-if="pendingImages.length < 9"
-            type="button"
-            class="aspect-square rounded border-2 border-dashed border-gray-300 text-gray-400 text-2xl hover:border-brand hover:text-brand"
-            :disabled="uploading"
-            @click="pickImage"
-          >
-            +
-          </button>
-        </div>
 
-        <div v-if="composerError" class="mt-2 text-xs text-red-500">
-          {{ composerError }}
-        </div>
+          <div v-if="composerError" class="mt-2 text-xs text-red-500">
+            {{ composerError }}
+          </div>
 
-        <div class="mt-2 flex items-center gap-2">
-          <button
-            v-if="pendingImages.length === 0"
-            type="button"
-            class="px-3 py-1.5 rounded-lg bg-[#f7f7f7] text-sm"
-            :disabled="uploading"
-            @click="pickImage"
-          >
-            🖼️ 添加图片
-          </button>
-          <input
-            ref="fileInput"
-            type="file"
-            accept="image/*"
-            multiple
-            class="hidden"
-            @change="onFilesChange"
-          />
-          <span v-if="uploading" class="text-xs text-gray-400">上传中…</span>
-          <div class="flex-1"></div>
-          <button
-            type="button"
-            class="px-4 py-1.5 rounded-lg bg-brand text-white text-sm disabled:opacity-50"
-            :disabled="!canPost || posting"
-            @click="onPost"
-          >
-            {{ posting ? "发布中…" : "发布" }}
-          </button>
-        </div>
-      </section>
+          <div class="mt-3 flex items-center gap-2">
+            <button
+              v-if="pendingImages.length === 0"
+              type="button"
+              class="pressable flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-ink-100 text-sm text-ink-700"
+              :disabled="uploading"
+              @click="pickImage"
+            >
+              <ImageIcon class="w-4 h-4" :stroke-width="1.75" />
+              <span>添加图片</span>
+            </button>
+            <input
+              ref="fileInput"
+              type="file"
+              accept="image/*"
+              multiple
+              class="hidden"
+              @change="onFilesChange"
+            />
+            <span v-if="uploading" class="text-xs text-ink-400">上传中…</span>
+            <div class="flex-1"></div>
+            <button
+              type="button"
+              class="pressable px-4 py-1.5 rounded-xl bg-brand text-white text-sm disabled:opacity-50"
+              :disabled="!canPost || posting"
+              @click="onPost"
+            >
+              {{ posting ? "发布中…" : "发布" }}
+            </button>
+          </div>
+        </section>
+      </Transition>
 
       <!-- Feed -->
       <div
         v-if="moments.loading && moments.timeline.length === 0"
-        class="text-center text-gray-400 text-sm py-8"
+        class="text-center text-ink-400 text-sm py-12"
       >
         加载中…
       </div>
       <div
         v-else-if="moments.timeline.length === 0"
-        class="text-center text-gray-400 text-sm py-12"
+        class="text-center text-ink-400 text-sm py-16"
       >
-        还没有动态，发布第一条吧～
+        还没有动态<br />
+        <span class="text-xs">发布第一条吧～</span>
       </div>
 
-      <MomentCard
-        v-for="m in moments.timeline"
-        :key="m.id"
-        :moment="m"
-      />
+      <TransitionGroup name="moment" tag="div" class="space-y-3">
+        <MomentCard
+          v-for="m in moments.timeline"
+          :key="m.id"
+          :moment="m"
+        />
+      </TransitionGroup>
 
       <div
         v-if="moments.timeline.length > 0"
-        class="text-center text-gray-400 text-xs py-4"
+        class="text-center text-ink-400 text-xs py-4"
       >
         <button
           v-if="moments.hasMore"
           type="button"
           :disabled="moments.loading"
-          class="px-3 py-1.5 rounded-lg bg-white border border-black/5"
+          class="pressable px-4 py-1.5 rounded-xl bg-white shadow-bubble"
           @click="moments.loadFeed(false)"
         >
           {{ moments.loading ? "加载中…" : "加载更多" }}
@@ -135,6 +148,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { Camera, X, Plus, Image as ImageIcon } from "lucide-vue-next";
 import MomentCard from "../components/MomentCard.vue";
 import { useMomentsStore } from "../stores/moments";
 import { api } from "../api/endpoints";

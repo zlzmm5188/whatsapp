@@ -1,19 +1,19 @@
 <template>
-  <article class="bg-white border border-black/5 rounded-xl p-4 flex gap-3">
+  <article class="bg-white rounded-2xl shadow-card px-4 py-4 flex gap-3">
     <Avatar :user="moment.author" size="md" />
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2">
         <span class="font-medium text-[#576b95]">
           {{ moment.author.nickname || moment.author.username }}
         </span>
-        <span class="text-[11px] text-gray-400 ml-auto">
+        <span class="text-[11px] text-ink-400 ml-auto">
           {{ formatRelative(moment.createdAt) }}
         </span>
       </div>
 
       <p
         v-if="moment.content"
-        class="mt-1 text-[15px] text-gray-800 whitespace-pre-wrap break-words"
+        class="mt-1 text-[15px] text-ink-800 whitespace-pre-wrap break-words leading-relaxed"
       >
         {{ moment.content }}
       </p>
@@ -22,7 +22,7 @@
       <div v-if="moment.images.length > 0" class="mt-2">
         <div
           v-if="moment.images.length === 1"
-          class="rounded-lg overflow-hidden max-w-xs"
+          class="rounded-xl overflow-hidden max-w-xs"
         >
           <img
             :src="moment.images[0]!.url"
@@ -42,7 +42,7 @@
             v-for="(img, i) in moment.images"
             :key="img.id"
             :src="img.url"
-            class="aspect-square object-cover rounded cursor-pointer"
+            class="aspect-square object-cover rounded-lg cursor-pointer"
             loading="lazy"
             @click="openLightbox(i)"
           />
@@ -50,55 +50,64 @@
       </div>
 
       <!-- Actions -->
-      <div class="mt-2 flex items-center gap-4 text-sm text-gray-500">
+      <div class="mt-3 flex items-center gap-5 text-sm text-ink-500">
         <button
           type="button"
-          class="flex items-center gap-1 hover:text-brand disabled:opacity-50"
+          class="pressable flex items-center gap-1.5 disabled:opacity-50"
+          :class="moment.likedByMe ? 'text-red-500' : 'hover:text-ink-700'"
           :disabled="liking"
           @click="onLike"
         >
-          <span>{{ moment.likedByMe ? "❤️" : "🤍" }}</span>
+          <Heart
+            class="w-[18px] h-[18px]"
+            :stroke-width="1.75"
+            :fill="moment.likedByMe ? 'currentColor' : 'none'"
+          />
           <span>{{ moment.likeCount }}</span>
         </button>
         <button
           type="button"
-          class="flex items-center gap-1 hover:text-brand"
+          class="pressable flex items-center gap-1.5 hover:text-ink-700"
           @click="toggleCommentBox"
         >
-          <span>💬</span>
+          <MessageCircle class="w-[18px] h-[18px]" :stroke-width="1.75" />
           <span>{{ moment.commentCount }}</span>
         </button>
         <button
           v-if="isMine"
           type="button"
-          class="ml-auto text-red-500 hover:text-red-600"
+          class="pressable ml-auto flex items-center gap-1 text-ink-400 hover:text-red-500"
           :disabled="deleting"
           @click="onDelete"
         >
-          {{ deleting ? "删除中…" : "删除" }}
+          <Trash2 class="w-[16px] h-[16px]" :stroke-width="1.75" />
+          <span>{{ deleting ? "删除中…" : "删除" }}</span>
         </button>
       </div>
 
       <!-- Like + comment list (WeChat-style grey block) -->
       <div
         v-if="moment.likes.length > 0 || moment.comments.length > 0"
-        class="mt-2 bg-[#f7f7f7] rounded-lg px-3 py-2 text-sm"
+        class="mt-2 bg-ink-100 rounded-xl px-3 py-2 text-sm"
       >
-        <div v-if="moment.likes.length > 0" class="text-[#576b95]">
-          ❤️
-          <span v-for="(u, i) in moment.likes" :key="u.id">
+        <div
+          v-if="moment.likes.length > 0"
+          class="flex items-center gap-1 text-[#576b95] flex-wrap"
+        >
+          <Heart class="w-[13px] h-[13px] text-red-500" fill="currentColor" :stroke-width="0" />
+          <template v-for="(u, i) in moment.likes" :key="u.id">
             <span>{{ u.nickname || u.username }}</span>
-            <span v-if="i < moment.likes.length - 1">、</span>
-          </span>
+            <span v-if="i < moment.likes.length - 1" class="text-ink-400">、</span>
+          </template>
         </div>
         <div
           v-if="moment.likes.length > 0 && moment.comments.length > 0"
-          class="my-1 border-t border-black/5"
+          class="my-1.5 border-t border-black/5"
         ></div>
         <div
           v-for="c in moment.comments"
           :key="c.id"
-          class="text-gray-800 break-words"
+          class="text-ink-800 break-words leading-relaxed"
         >
           <button
             type="button"
@@ -108,7 +117,7 @@
             {{ c.user.nickname || c.user.username }}
           </button>
           <template v-if="c.replyToUser">
-            <span class="text-gray-400"> 回复 </span>
+            <span class="text-ink-400"> 回复 </span>
             <span class="text-[#576b95]">
               {{ c.replyToUser.nickname || c.replyToUser.username }}
             </span>
@@ -117,7 +126,7 @@
           <button
             v-if="canDeleteComment(c.user.id)"
             type="button"
-            class="ml-1 text-[11px] text-gray-400 hover:text-red-500"
+            class="ml-1 text-[11px] text-ink-400 hover:text-red-500"
             @click="onDeleteComment(c.id)"
           >
             删除
@@ -126,58 +135,65 @@
       </div>
 
       <!-- Comment input -->
-      <div
-        v-if="showCommentBox"
-        class="mt-2 flex items-center gap-2"
-      >
-        <input
-          ref="commentInput"
-          v-model="commentText"
-          :placeholder="replyPlaceholder || '评论'"
-          class="flex-1 rounded-lg border border-black/10 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
-          @keydown.enter.prevent="onSubmitComment"
-        />
-        <button
-          type="button"
-          class="px-3 py-1.5 rounded-lg bg-brand text-white text-sm disabled:opacity-50"
-          :disabled="!commentText.trim() || sending"
-          @click="onSubmitComment"
+      <Transition name="fade">
+        <div
+          v-if="showCommentBox"
+          class="mt-2 flex items-center gap-2"
         >
-          {{ sending ? "…" : "发送" }}
-        </button>
-        <button
-          type="button"
-          class="text-gray-400 text-sm px-2"
-          @click="closeCommentBox"
-        >
-          取消
-        </button>
-      </div>
+          <input
+            ref="commentInput"
+            v-model="commentText"
+            :placeholder="replyPlaceholder || '评论'"
+            class="flex-1 bg-ink-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/20"
+            @keydown.enter.prevent="onSubmitComment"
+          />
+          <button
+            type="button"
+            class="pressable px-3 py-1.5 rounded-full bg-brand text-white text-sm disabled:opacity-50"
+            :disabled="!commentText.trim() || sending"
+            @click="onSubmitComment"
+          >
+            {{ sending ? "…" : "发送" }}
+          </button>
+          <button
+            type="button"
+            class="pressable text-ink-400 text-sm px-2"
+            @click="closeCommentBox"
+          >
+            取消
+          </button>
+        </div>
+      </Transition>
     </div>
   </article>
 
   <!-- Lightbox -->
-  <div
-    v-if="lightboxIdx !== null"
-    class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
-    @click.self="closeLightbox"
-  >
-    <button
-      type="button"
-      class="absolute top-4 right-4 text-white text-3xl w-10 h-10 rounded-full bg-black/40 hover:bg-black/60"
-      @click="closeLightbox"
-    >
-      ×
-    </button>
-    <img
-      :src="moment.images[lightboxIdx]?.url ?? ''"
-      class="max-w-full max-h-full object-contain"
-    />
-  </div>
+  <Teleport to="body">
+    <Transition name="fade">
+      <div
+        v-if="lightboxIdx !== null"
+        class="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4"
+        @click.self="closeLightbox"
+      >
+        <button
+          type="button"
+          class="pressable absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center"
+          @click="closeLightbox"
+        >
+          <X class="w-5 h-5" :stroke-width="2" />
+        </button>
+        <img
+          :src="moment.images[lightboxIdx]?.url ?? ''"
+          class="max-w-full max-h-full object-contain"
+        />
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
+import { Heart, MessageCircle, Trash2, X } from "lucide-vue-next";
 import Avatar from "./Avatar.vue";
 import { useAuthStore } from "../stores/auth";
 import { useMomentsStore } from "../stores/moments";
@@ -251,7 +267,6 @@ function closeCommentBox() {
 }
 
 function onReply(userId: string, name: string) {
-  // Don't offer "reply to yourself" — just open a blank box.
   if (auth.user?.id === userId) {
     showCommentBox.value = true;
     replyToUserId.value = null;

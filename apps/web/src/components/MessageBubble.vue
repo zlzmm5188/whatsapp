@@ -12,7 +12,7 @@
     <div class="flex flex-col min-w-0 max-w-[72%]">
       <div
         v-if="!isMine && showSenderName && senderUser"
-        class="text-[11px] text-gray-500 mb-0.5 px-0.5 truncate"
+        class="text-[11px] text-ink-400 mb-0.5 px-1 truncate"
       >
         {{ senderUser.nickname }}
       </div>
@@ -23,8 +23,8 @@
         :href="resolveMedia(message.mediaUrl)"
         target="_blank"
         rel="noreferrer"
-        class="block rounded-2xl overflow-hidden shadow-sm"
-        :class="isMine ? 'rounded-br-sm' : 'rounded-bl-sm'"
+        class="block rounded-2xl overflow-hidden shadow-bubble"
+        :class="isMine ? 'rounded-br-md' : 'rounded-bl-md'"
       >
         <img
           :src="resolveMedia(message.mediaUrl)"
@@ -39,19 +39,30 @@
         :href="resolveMedia(message.mediaUrl)"
         target="_blank"
         rel="noreferrer"
-        class="flex items-center gap-3 px-3 py-2 rounded-2xl shadow-sm text-[14px]"
+        class="flex items-center gap-3 px-3.5 py-2.5 rounded-2xl shadow-bubble text-[14px]"
         :class="
           isMine
-            ? 'bg-brand text-white rounded-br-sm'
-            : 'bg-white text-gray-800 rounded-bl-sm'
+            ? 'bg-brand text-white rounded-br-md'
+            : 'bg-white text-ink-800 rounded-bl-md'
         "
       >
-        <span class="text-2xl">📎</span>
+        <div
+          class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+          :class="isMine ? 'bg-white/20' : 'bg-ink-100'"
+        >
+          <FileIcon
+            class="w-5 h-5"
+            :class="isMine ? 'text-white' : 'text-ink-600'"
+            :stroke-width="1.75"
+          />
+        </div>
         <div class="min-w-0">
-          <div class="truncate">{{ message.mediaName || "文件" }}</div>
+          <div class="truncate font-medium">
+            {{ message.mediaName || "文件" }}
+          </div>
           <div
-            class="text-[11px] opacity-80"
-            :class="isMine ? 'text-white/80' : 'text-gray-500'"
+            class="text-[11px]"
+            :class="isMine ? 'text-white/75' : 'text-ink-500'"
           >
             {{ formatSize(message.mediaSize) }}
           </div>
@@ -69,11 +80,11 @@
       <!-- Text -->
       <div
         v-else
-        class="px-3 py-2 rounded-2xl whitespace-pre-wrap break-words text-[15px] leading-relaxed shadow-sm"
+        class="px-3.5 py-2 rounded-2xl whitespace-pre-wrap break-words text-[15px] leading-relaxed shadow-bubble"
         :class="
           isMine
-            ? 'bg-brand text-white rounded-br-sm'
-            : 'bg-white text-gray-800 rounded-bl-sm'
+            ? 'bg-brand text-white rounded-br-md'
+            : 'bg-white text-ink-800 rounded-bl-md'
         "
       >
         {{ message.content }}
@@ -90,6 +101,7 @@
 
 <script setup lang="ts">
 import type { ChatMessage, PublicUser } from "@im/shared";
+import { File as FileIcon } from "lucide-vue-next";
 import Avatar from "./Avatar.vue";
 
 defineProps<{
@@ -101,10 +113,6 @@ defineProps<{
 }>();
 
 function resolveMedia(url: string): string {
-  // Media URLs returned by the server are relative paths under /uploads/.
-  // In dev, Vite's proxy (see vite.config.ts) forwards /uploads to the
-  // backend at :3001; in prod the backend serves them directly. Either way
-  // we just return the URL unchanged.
   return url;
 }
 

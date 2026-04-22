@@ -13,6 +13,7 @@
   "dependencies": {
     "@im/shared": "workspace:*",
     "axios": "^1.7.9",
+    "lucide-vue-next": "^1.0.0",
     "pinia": "^2.3.0",
     "socket.io-client": "^4.8.1",
     "vue": "^3.5.13",

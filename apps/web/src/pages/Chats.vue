@@ -2,33 +2,51 @@
   <div class="h-full flex">
     <!-- Conversation list -->
     <aside
-      class="w-full md:w-80 flex-shrink-0 bg-[#f7f7f7] border-r border-black/10 flex flex-col"
+      class="w-full md:w-[340px] flex-shrink-0 bg-white md:bg-ink-50 md:border-r md:border-black/5 flex flex-col"
       :class="{ 'hidden md:flex': hasActive }"
     >
-      <div class="p-3 border-b border-black/10 flex items-center gap-2">
-        <input
-          v-model="keyword"
-          class="flex-1 bg-white rounded-lg px-3 py-2 text-sm border border-black/5 focus:outline-none focus:ring-2 focus:ring-brand/30"
-          placeholder="搜索"
-        />
+      <div class="px-4 pt-3 pb-2 flex items-center justify-between gap-2">
+        <h1 class="text-[22px] font-semibold tracking-tight text-ink-800">
+          聊天
+        </h1>
         <button
-          class="w-9 h-9 rounded-lg bg-white border border-black/5 hover:bg-black/5 text-lg flex-shrink-0"
+          type="button"
+          class="pressable w-9 h-9 rounded-full bg-ink-100 hover:bg-ink-200 flex items-center justify-center text-ink-700"
           title="发起群聊"
           @click="showCreate = true"
         >
-          +
+          <Plus class="w-5 h-5" :stroke-width="2.25" />
         </button>
       </div>
 
-      <div class="flex-1 overflow-y-auto">
-        <div v-if="!filtered.length" class="text-center text-gray-400 text-sm py-10">
-          还没有聊天，去通讯录加个好友或发起群聊吧
+      <div class="px-4 pb-2">
+        <div
+          class="flex items-center gap-2 bg-ink-100 rounded-xl px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-brand/20"
+        >
+          <Search class="w-4 h-4 text-ink-400" :stroke-width="2" />
+          <input
+            v-model="keyword"
+            class="flex-1 bg-transparent focus:outline-none placeholder:text-ink-400"
+            placeholder="搜索"
+          />
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto pb-2">
+        <div v-if="!filtered.length" class="text-center text-ink-400 text-sm py-12 px-6">
+          还没有聊天<br />
+          <span class="text-xs">去通讯录加个好友或发起群聊吧</span>
         </div>
         <button
           v-for="c in filtered"
           :key="convKey(c)"
-          class="w-full text-left flex items-center gap-3 px-3 py-3 hover:bg-black/5 transition"
-          :class="activeConvKey === convKey(c) ? 'bg-black/5' : ''"
+          type="button"
+          class="pressable w-full text-left flex items-center gap-3 px-4 py-2.5"
+          :class="
+            activeConvKey === convKey(c)
+              ? 'bg-ink-200/70'
+              : 'active:bg-ink-200/60'
+          "
           @click="openConv(c)"
         >
           <GroupAvatar
@@ -42,20 +60,23 @@
           />
           <div class="flex-1 min-w-0">
             <div class="flex items-center justify-between gap-2">
-              <span class="font-medium text-gray-800 truncate">
+              <span class="font-medium text-ink-800 truncate">
                 {{ title(c) }}
               </span>
-              <span v-if="c.lastMessage" class="text-[11px] text-gray-400 flex-shrink-0">
+              <span
+                v-if="c.lastMessage"
+                class="text-[11px] text-ink-400 flex-shrink-0"
+              >
                 {{ formatTime(c.lastMessage.createdAt) }}
               </span>
             </div>
             <div class="flex items-center justify-between gap-2 mt-0.5">
-              <span class="text-sm text-gray-500 truncate">
+              <span class="text-sm text-ink-500 truncate">
                 {{ preview(c) }}
               </span>
               <span
                 v-if="c.unreadCount > 0"
-                class="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center"
+                class="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-medium flex items-center justify-center"
               >
                 {{ c.unreadCount > 99 ? "99+" : c.unreadCount }}
               </span>
@@ -67,10 +88,14 @@
 
     <!-- Active chat -->
     <section
-      class="flex-1 min-w-0 bg-[#ededed]"
+      class="flex-1 min-w-0 bg-ink-100"
       :class="{ 'hidden md:block': !hasActive }"
     >
-      <RouterView />
+      <RouterView v-slot="{ Component }">
+        <Transition name="fade" mode="out-in">
+          <component :is="Component" />
+        </Transition>
+      </RouterView>
     </section>
 
     <GroupCreateModal
@@ -84,6 +109,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { Plus, Search } from "lucide-vue-next";
 import { useChatStore } from "../stores/chat";
 import Avatar from "../components/Avatar.vue";
 import GroupAvatar from "../components/GroupAvatar.vue";
@@ -145,7 +171,6 @@ function openConv(c: Conversation) {
 
 async function onGroupCreated(g: GroupDetail) {
   showCreate.value = false;
-  // Refresh conversations list so the new group appears immediately.
   await chat.refreshConversations();
   router.push({ name: "group-chat", params: { groupId: g.id } });
 }

@@ -15,6 +15,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Permit Vite dev server to accept requests from ngrok / LAN / preview tunnels.
+    // `true` is safe here because the dev server is never exposed in production.
+    allowedHosts: true,
     proxy: {
       "/api": {
         target: "http://localhost:3001",

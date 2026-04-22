@@ -1,44 +1,55 @@
 <template>
-  <div class="h-full flex flex-col">
+  <div class="h-full flex flex-col bg-ink-100">
     <!-- header -->
-    <div class="flex items-center gap-2 px-3 md:px-4 h-14 border-b border-black/10 bg-white">
-      <button class="md:hidden text-gray-500 px-2" @click="goBack">←</button>
+    <header
+      class="flex items-center gap-2 px-2 md:px-4 h-14 bg-glass border-b border-black/5 pt-safe"
+    >
+      <button
+        type="button"
+        class="pressable md:hidden w-9 h-9 flex items-center justify-center rounded-full text-ink-700"
+        @click="goBack"
+      >
+        <ChevronLeft class="w-6 h-6" :stroke-width="2.25" />
+      </button>
       <GroupAvatar v-if="group" :group="group" size="sm" />
       <div class="flex-1 min-w-0">
-        <div class="font-medium text-gray-800 truncate">
+        <div class="font-medium text-ink-800 truncate">
           {{ group?.name || "群聊" }}
         </div>
-        <div class="text-xs text-gray-400 truncate">
+        <div class="text-xs text-ink-400 truncate">
           <template v-if="typingLabel">{{ typingLabel }}</template>
           <template v-else>{{ memberCount }} 位成员</template>
         </div>
       </div>
       <button
-        class="text-gray-500 text-xl px-2"
+        type="button"
+        class="pressable w-9 h-9 flex items-center justify-center rounded-full text-ink-700 hover:bg-ink-100"
         title="成员管理"
         @click="showMembers = true"
       >
-        ⋯
+        <MoreHorizontal class="w-5 h-5" :stroke-width="2" />
       </button>
-    </div>
+    </header>
 
     <!-- messages -->
     <div
       ref="scrollEl"
-      class="flex-1 overflow-y-auto p-4 space-y-2 bg-[#ededed]"
+      class="flex-1 overflow-y-auto px-3 md:px-4 py-3 space-y-2"
     >
-      <div v-if="!messages.length" class="text-center text-gray-400 text-sm py-8">
+      <div v-if="!messages.length" class="text-center text-ink-400 text-sm py-10">
         欢迎加入 <b>{{ group?.name }}</b>，发条消息打个招呼吧
       </div>
-      <MessageBubble
-        v-for="m in messages"
-        :key="m.id"
-        :message="m"
-        :is-mine="m.senderId === meId"
-        :me-user="auth.user"
-        :sender-user="senderOf(m.senderId)"
-        :show-sender-name="true"
-      />
+      <TransitionGroup name="bubble" tag="div" class="space-y-2">
+        <MessageBubble
+          v-for="m in messages"
+          :key="m.id"
+          :message="m"
+          :is-mine="m.senderId === meId"
+          :me-user="auth.user"
+          :sender-user="senderOf(m.senderId)"
+          :show-sender-name="true"
+        />
+      </TransitionGroup>
     </div>
 
     <Composer :on-send="onSend" :on-typing="onTyping" />
@@ -54,6 +65,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { ChevronLeft, MoreHorizontal } from "lucide-vue-next";
 import { useAuthStore } from "../stores/auth";
 import { useChatStore, groupKey } from "../stores/chat";
 import GroupAvatar from "../components/GroupAvatar.vue";
@@ -74,7 +86,6 @@ const showMembers = ref(false);
 const meId = computed(() => auth.user?.id ?? null);
 const group = computed(() => chat.groupDetails[props.groupId]);
 const messages = computed(() => chat.messagesFor(groupKey(props.groupId)));
-
 const memberCount = computed(() => group.value?.members.length ?? 0);
 
 const memberById = computed<Record<string, PublicUser>>(() => {
