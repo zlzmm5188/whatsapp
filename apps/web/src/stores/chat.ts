@@ -280,7 +280,10 @@ export const useChatStore = defineStore("chat", {
       this.messagesByKey[key] = list;
 
       if (!socket) {
-        optimistic.status = "failed";
+        // Must mutate through the reactive proxy (via markFailed iterating
+        // messagesByKey[key]) so Vue sees the change. The local `optimistic`
+        // variable is the pre-assignment raw reference and would bypass it.
+        this.markFailed(key, clientId);
         return;
       }
       const payload: SendMessagePayload = {
@@ -337,7 +340,7 @@ export const useChatStore = defineStore("chat", {
       this.messagesByKey[key] = list;
 
       if (!socket) {
-        optimistic.status = "failed";
+        this.markFailed(key, clientId);
         return;
       }
       const payload: SendMessagePayload = {
@@ -378,7 +381,10 @@ export const useChatStore = defineStore("chat", {
       const list = this.messagesByKey[key];
       if (!list) return;
       const msg = list.find((m) => m.clientId === clientId);
-      if (!msg || msg.status === "sent") return;
+      // Only retry rows that actually failed. Retrying a still-pending row
+      // would drop the bubble and fire a second emit, duplicating if the
+      // original ack later succeeds.
+      if (!msg || msg.status !== "failed") return;
       // Drop the failed optimistic row; the send path re-adds a fresh one
       // with a new clientId so retries don't pile up stale clientIds.
       this.messagesByKey[key] = list.filter((m) => m.clientId !== clientId);
@@ -397,7 +403,8 @@ export const useChatStore = defineStore("chat", {
       const list = this.messagesByKey[key];
       if (!list) return;
       const msg = list.find((m) => m.clientId === clientId);
-      if (!msg || msg.status === "sent") return;
+      // Only retry failed rows; see retrySendDM for reasoning.
+      if (!msg || msg.status !== "failed") return;
       this.messagesByKey[key] = list.filter((m) => m.clientId !== clientId);
       this.sendGroup(groupId, {
         content: msg.content,

@@ -99,14 +99,18 @@ function isActive(name: string): boolean {
 
 // Keep the main tab pages alive across switches so scroll position, feed
 // state, search input etc. survive tab navigation without a remount flash.
-// Chat/group windows are intentionally NOT cached — each peer or group is
-// its own route and caching them all would leak memory over long sessions.
+// NOTE: <KeepAlive :include> matches *component* names (not route names).
+// With <script setup> + @vitejs/plugin-vue on Vue 3.5, the component name
+// is inferred from the filename in PascalCase, so these strings must match
+// the .vue filenames (Chats.vue → "Chats"), NOT the lowercase route names.
+// Chat/group windows are intentionally excluded — each peer/group is its
+// own route and caching them all would leak memory over long sessions.
 const keepAliveNames = [
-  "chats",
-  "chats-empty",
-  "contacts",
-  "moments",
-  "profile",
+  "Chats",
+  "EmptyChat",
+  "Contacts",
+  "Moments",
+  "Profile",
 ];
 
 function keepKey(r: RouteLocationNormalized): string {
