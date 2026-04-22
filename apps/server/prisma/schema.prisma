@@ -1,0 +1,197 @@
+// Prisma schema for WhatsApp-IM
+// Uses SQLite in dev; swap `provider` to "postgresql" for production.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  email     String?  @unique
+  password  String
+  nickname  String
+  avatar    String?
+  bio       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sentMessages       Message[]       @relation("sender")
+  receivedMessages   Message[]       @relation("receiver")
+  friendshipsA       Friendship[]    @relation("userA")
+  friendshipsB       Friendship[]    @relation("userB")
+  friendRequestsFrom FriendRequest[] @relation("from")
+  friendRequestsTo   FriendRequest[] @relation("to")
+  ownedGroups        Group[]         @relation("GroupOwner")
+  groupMemberships   GroupMember[]
+  groupMessageReads  GroupMessageRead[]
+  moments            Moment[]
+  momentLikes        MomentLike[]
+  momentComments     MomentComment[]          @relation("MomentCommentAuthor")
+  momentCommentReplies MomentComment[]        @relation("MomentCommentReplyTo")
+}
+
+model Friendship {
+  id        String   @id @default(cuid())
+  userAId   String
+  userBId   String
+  createdAt DateTime @default(now())
+
+  userA User @relation("userA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB User @relation("userB", fields: [userBId], references: [id], onDelete: Cascade)
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+}
+
+model FriendRequest {
+  id        String   @id @default(cuid())
+  fromId    String
+  toId      String
+  message   String?
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  from User @relation("from", fields: [fromId], references: [id], onDelete: Cascade)
+  to   User @relation("to", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([fromId, toId])
+  @@index([toId, status])
+}
+
+model Group {
+  id          String        @id @default(cuid())
+  name        String
+  avatar      String?
+  description String?
+  ownerId     String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  owner    User          @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members  GroupMember[]
+  messages Message[]     @relation("groupMessages")
+
+  @@index([ownerId])
+}
+
+model GroupMember {
+  id       String   @id @default(cuid())
+  groupId  String
+  userId   String
+  role     String   @default("member") // owner | admin | member
+  joinedAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  senderId   String
+  // Exactly one of (receiverId) or (groupId) is set
+  receiverId String?
+  groupId    String?
+  content    String
+  type       String   @default("text") // text | image | file | emoji | system
+  mediaUrl   String?
+  mediaName  String?
+  mediaSize  Int?
+  mediaMime  String?
+  read       Boolean  @default(false) // DM read flag
+  createdAt  DateTime @default(now())
+
+  sender   User   @relation("sender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User?  @relation("receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  group    Group? @relation("groupMessages", fields: [groupId], references: [id], onDelete: Cascade)
+  reads    GroupMessageRead[]
+
+  @@index([senderId, receiverId, createdAt])
+  @@index([groupId, createdAt])
+  @@index([receiverId, read])
+}
+
+model GroupMessageRead {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+// Moments = friend-visible feed (朋友圈). Text + optional images, likes,
+// and flat comments (with optional reply-to-user for inline @ replies).
+model Moment {
+  id        String   @id @default(cuid())
+  authorId  String
+  content   String   @default("")
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+
+  author   User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  images   MomentImage[]
+  likes    MomentLike[]
+  comments MomentComment[]
+
+  @@index([authorId, createdAt])
+  @@index([createdAt])
+}
+
+model MomentImage {
+  id       String @id @default(cuid())
+  momentId String
+  url      String
+  // 0-based display order inside the moment.
+  order    Int    @default(0)
+
+  moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+
+  @@index([momentId])
+}
+
+model MomentLike {
+  id        String   @id @default(cuid())
+  momentId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([momentId, userId])
+  @@index([userId])
+}
+
+model MomentComment {
+  id            String   @id @default(cuid())
+  momentId      String
+  userId        String
+  // Optional: when a comment is posted as an @-reply to another commenter,
+  // this points at the user being replied to (not at the comment id — the
+  // frontend renders inline "@nickname" style).
+  replyToUserId String?
+  content       String
+  createdAt     DateTime @default(now())
+
+  moment      Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  user        User   @relation("MomentCommentAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  replyToUser User?  @relation("MomentCommentReplyTo", fields: [replyToUserId], references: [id], onDelete: SetNull)
+
+  @@index([momentId, createdAt])
+  @@index([userId])
+}
