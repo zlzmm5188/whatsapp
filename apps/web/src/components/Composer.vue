@@ -85,9 +85,11 @@
       />
 
       <textarea
+        ref="textareaEl"
         v-model="text"
         rows="1"
-        class="flex-1 resize-none bg-ink-100 rounded-2xl px-4 py-2.5 text-[15px] leading-snug focus:outline-none focus:ring-2 focus:ring-brand/20 max-h-40"
+        class="flex-1 resize-none bg-ink-100 rounded-2xl px-4 py-2 text-[15px] leading-snug focus:outline-none focus:ring-2 focus:ring-brand/20 overflow-y-auto"
+        :style="{ maxHeight: '140px' }"
         placeholder="输入消息"
         @keydown.enter.exact.prevent="sendText"
         @keydown.enter.shift.exact="() => { /* allow newline */ }"
@@ -95,8 +97,9 @@
         @blur="stopTyping"
       />
       <button
-        class="pressable w-10 h-10 flex-shrink-0 rounded-full bg-brand text-white flex items-center justify-center disabled:opacity-40 disabled:bg-ink-300"
-        :disabled="!text.trim()"
+        class="send-fab w-10 h-10 flex-shrink-0 rounded-full flex items-center justify-center disabled:opacity-40 disabled:bg-ink-300"
+        :class="canSend ? 'bg-brand text-white shadow-brand' : 'bg-ink-300 text-white'"
+        :disabled="!canSend"
         type="button"
         title="发送"
         @click="sendText"
@@ -118,7 +121,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import {
   Smile,
   ImagePlus,
@@ -148,8 +151,22 @@ const props = defineProps<{
 
 const text = ref("");
 const showEmoji = ref(false);
+const textareaEl = ref<HTMLTextAreaElement | null>(null);
 const imageInput = ref<HTMLInputElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
+
+const canSend = computed(() => text.value.trim().length > 0);
+
+// Auto-grow textarea: match scrollHeight up to the CSS max-height so multi-
+// line drafts don't visually shift the composer.
+watch(text, () => {
+  void nextTick(() => {
+    const el = textareaEl.value;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 140) + "px";
+  });
+});
 const pendingFile = ref<File | null>(null);
 const pendingPreview = ref<string | null>(null);
 const pendingKind = ref<FilePickKind>("file");

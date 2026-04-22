@@ -42,12 +42,13 @@
       <TransitionGroup name="bubble" tag="div" class="space-y-2">
         <MessageBubble
           v-for="m in messages"
-          :key="m.id"
+          :key="m.clientId ?? m.id"
           :message="m"
           :is-mine="m.senderId === meId"
           :me-user="auth.user"
           :sender-user="senderOf(m.senderId)"
           :show-sender-name="true"
+          @retry="onRetry"
         />
       </TransitionGroup>
     </div>
@@ -72,7 +73,7 @@ import GroupAvatar from "../components/GroupAvatar.vue";
 import Composer from "../components/Composer.vue";
 import MessageBubble from "../components/MessageBubble.vue";
 import GroupMembersModal from "../components/GroupMembersModal.vue";
-import type { MessageType, PublicUser } from "@im/shared";
+import type { ChatMessage, MessageType, PublicUser } from "@im/shared";
 
 const props = defineProps<{ groupId: string }>();
 
@@ -152,6 +153,11 @@ function onSend(args: {
 
 function onTyping(typing: boolean) {
   chat.sendTypingGroup(props.groupId, typing);
+}
+
+function onRetry(msg: ChatMessage) {
+  if (!msg.clientId) return;
+  chat.retrySendGroup(props.groupId, msg.clientId);
 }
 
 function goBack() {

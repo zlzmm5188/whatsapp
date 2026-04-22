@@ -1,6 +1,6 @@
 <template>
   <div
-    class="flex items-end gap-2"
+    class="flex items-end gap-2 cv-auto"
     :class="isMine ? 'justify-end' : 'justify-start'"
   >
     <Avatar
@@ -9,7 +9,13 @@
       size="sm"
       :online="false"
     />
-    <div class="flex flex-col min-w-0 max-w-[72%]">
+    <div
+      class="flex flex-col min-w-0 max-w-[72%]"
+      :class="{
+        'msg-pending': message.status === 'pending',
+        'msg-failed': message.status === 'failed',
+      }"
+    >
       <div
         v-if="!isMine && showSenderName && senderUser"
         class="text-[11px] text-ink-400 mb-0.5 px-1 truncate"
@@ -89,6 +95,27 @@
       >
         {{ message.content }}
       </div>
+
+      <!-- Status row for my own bubble: sending / failed → tap to retry -->
+      <div
+        v-if="isMine && (message.status === 'pending' || message.status === 'failed')"
+        class="flex items-center justify-end gap-1 mt-0.5 pr-1 text-[11px]"
+      >
+        <span v-if="message.status === 'pending'" class="text-ink-400 flex items-center gap-1">
+          <Loader2 class="w-3 h-3 spin-ios" :stroke-width="2.25" />
+          <span>发送中</span>
+        </span>
+        <button
+          v-else
+          type="button"
+          class="pressable text-red-500 flex items-center gap-1"
+          title="重发"
+          @click="$emit('retry', message)"
+        >
+          <AlertCircle class="w-3.5 h-3.5" :stroke-width="2.25" />
+          <span>发送失败 · 点击重试</span>
+        </button>
+      </div>
     </div>
     <Avatar
       v-if="isMine && meUser"
@@ -101,7 +128,7 @@
 
 <script setup lang="ts">
 import type { ChatMessage, PublicUser } from "@im/shared";
-import { File as FileIcon } from "lucide-vue-next";
+import { File as FileIcon, Loader2, AlertCircle } from "lucide-vue-next";
 import Avatar from "./Avatar.vue";
 
 defineProps<{
@@ -110,6 +137,10 @@ defineProps<{
   meUser: PublicUser | null;
   senderUser: PublicUser | null;
   showSenderName: boolean;
+}>();
+
+defineEmits<{
+  (e: "retry", message: ChatMessage): void;
 }>();
 
 function resolveMedia(url: string): string {

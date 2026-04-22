@@ -26,6 +26,10 @@ export function groupKey(groupId: string): ChatKey {
   return `group:${groupId}`;
 }
 
+function makeClientId(): string {
+  return `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 interface SendArgs {
   content: string;
   type?: MessageType;
@@ -250,10 +254,35 @@ export const useChatStore = defineStore("chat", {
 
     sendDM(peerId: string, args: SendArgs) {
       const socket = getSocket();
-      if (!socket) return;
-      const clientId = `c_${Date.now()}_${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
+      const meId = this.meId();
+      if (!meId) return;
+      const clientId = makeClientId();
+      // 1) Push pending bubble immediately so the UI feels 0-latency.
+      const key = dmKey(peerId);
+      const optimistic: ChatMessage = {
+        id: clientId,
+        clientId,
+        senderId: meId,
+        receiverId: peerId,
+        groupId: null,
+        content: args.content,
+        type: args.type ?? "text",
+        mediaUrl: args.mediaUrl ?? null,
+        mediaName: args.mediaName ?? null,
+        mediaSize: args.mediaSize ?? null,
+        mediaMime: args.mediaMime ?? null,
+        read: false,
+        createdAt: new Date().toISOString(),
+        status: "pending",
+      };
+      const list = this.messagesByKey[key] ?? [];
+      list.push(optimistic);
+      this.messagesByKey[key] = list;
+
+      if (!socket) {
+        optimistic.status = "failed";
+        return;
+      }
       const payload: SendMessagePayload = {
         receiverId: peerId,
         content: args.content,
@@ -264,15 +293,53 @@ export const useChatStore = defineStore("chat", {
         mediaMime: args.mediaMime,
         clientId,
       };
-      socket.emit(SocketEvents.SendMessage, payload);
+      // 2) Fire with ack; mark failed if the server rejects or the socket
+      //    doesn't round-trip within a reasonable window. The NewMessage
+      //    broadcast (matched by clientId in handleIncoming) is what
+      //    actually upgrades the bubble from pending → sent.
+      socket
+        .timeout(8000)
+        .emit(
+          SocketEvents.SendMessage,
+          payload,
+          (err: unknown, ack?: { ok: boolean; error?: string }) => {
+            if (err || !ack?.ok) {
+              this.markFailed(key, clientId);
+            }
+          },
+        );
     },
 
     sendGroup(groupId: string, args: SendArgs) {
       const socket = getSocket();
-      if (!socket) return;
-      const clientId = `c_${Date.now()}_${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
+      const meId = this.meId();
+      if (!meId) return;
+      const clientId = makeClientId();
+      const key = groupKey(groupId);
+      const optimistic: ChatMessage = {
+        id: clientId,
+        clientId,
+        senderId: meId,
+        receiverId: null,
+        groupId,
+        content: args.content,
+        type: args.type ?? "text",
+        mediaUrl: args.mediaUrl ?? null,
+        mediaName: args.mediaName ?? null,
+        mediaSize: args.mediaSize ?? null,
+        mediaMime: args.mediaMime ?? null,
+        read: false,
+        createdAt: new Date().toISOString(),
+        status: "pending",
+      };
+      const list = this.messagesByKey[key] ?? [];
+      list.push(optimistic);
+      this.messagesByKey[key] = list;
+
+      if (!socket) {
+        optimistic.status = "failed";
+        return;
+      }
       const payload: SendMessagePayload = {
         groupId,
         content: args.content,
@@ -283,7 +350,69 @@ export const useChatStore = defineStore("chat", {
         mediaMime: args.mediaMime,
         clientId,
       };
-      socket.emit(SocketEvents.SendMessage, payload);
+      socket
+        .timeout(8000)
+        .emit(
+          SocketEvents.SendMessage,
+          payload,
+          (err: unknown, ack?: { ok: boolean; error?: string }) => {
+            if (err || !ack?.ok) {
+              this.markFailed(key, clientId);
+            }
+          },
+        );
+    },
+
+    markFailed(key: ChatKey, clientId: string) {
+      const list = this.messagesByKey[key];
+      if (!list) return;
+      for (const m of list) {
+        if (m.clientId === clientId && m.status !== "sent") {
+          m.status = "failed";
+        }
+      }
+    },
+
+    retrySendDM(peerId: string, clientId: string) {
+      const key = dmKey(peerId);
+      const list = this.messagesByKey[key];
+      if (!list) return;
+      const msg = list.find((m) => m.clientId === clientId);
+      if (!msg || msg.status === "sent") return;
+      // Drop the failed optimistic row; the send path re-adds a fresh one
+      // with a new clientId so retries don't pile up stale clientIds.
+      this.messagesByKey[key] = list.filter((m) => m.clientId !== clientId);
+      this.sendDM(peerId, {
+        content: msg.content,
+        type: msg.type,
+        mediaUrl: msg.mediaUrl ?? undefined,
+        mediaName: msg.mediaName ?? undefined,
+        mediaSize: msg.mediaSize ?? undefined,
+        mediaMime: msg.mediaMime ?? undefined,
+      });
+    },
+
+    retrySendGroup(groupId: string, clientId: string) {
+      const key = groupKey(groupId);
+      const list = this.messagesByKey[key];
+      if (!list) return;
+      const msg = list.find((m) => m.clientId === clientId);
+      if (!msg || msg.status === "sent") return;
+      this.messagesByKey[key] = list.filter((m) => m.clientId !== clientId);
+      this.sendGroup(groupId, {
+        content: msg.content,
+        type: msg.type,
+        mediaUrl: msg.mediaUrl ?? undefined,
+        mediaName: msg.mediaName ?? undefined,
+        mediaSize: msg.mediaSize ?? undefined,
+        mediaMime: msg.mediaMime ?? undefined,
+      });
+    },
+
+    dropFailed(key: ChatKey, clientId: string) {
+      const list = this.messagesByKey[key];
+      if (!list) return;
+      this.messagesByKey[key] = list.filter((m) => m.clientId !== clientId);
     },
 
     sendTypingDM(peerId: string, typing: boolean) {
@@ -309,6 +438,28 @@ export const useChatStore = defineStore("chat", {
       }
 
       const list = this.messagesByKey[key] ?? [];
+      // Reconcile an optimistic bubble (pending) with the server's echo.
+      // `clientId` on the broadcast lets the sender upgrade the pending row
+      // in-place rather than showing a duplicate bubble.
+      const cid = msg.clientId;
+      if (cid) {
+        const opt = list.find((m) => m.clientId === cid);
+        if (opt) {
+          opt.id = msg.id;
+          opt.content = msg.content;
+          opt.type = msg.type;
+          opt.mediaUrl = msg.mediaUrl;
+          opt.mediaName = msg.mediaName;
+          opt.mediaSize = msg.mediaSize;
+          opt.mediaMime = msg.mediaMime;
+          opt.read = msg.read;
+          opt.createdAt = msg.createdAt;
+          opt.status = "sent";
+          this.messagesByKey[key] = list;
+          this.updateConversationMeta(msg, key, isGroup);
+          return;
+        }
+      }
       if (!list.some((m) => m.id === msg.id)) {
         list.push({
           id: msg.id,
@@ -323,9 +474,20 @@ export const useChatStore = defineStore("chat", {
           mediaMime: msg.mediaMime,
           read: msg.read,
           createdAt: msg.createdAt,
+          status: "sent",
         });
       }
       this.messagesByKey[key] = list;
+      this.updateConversationMeta(msg, key, isGroup);
+      return;
+    },
+
+    updateConversationMeta(
+      msg: NewMessagePayload,
+      key: ChatKey,
+      isGroup: boolean,
+    ) {
+      const meId = this.meId();
 
       // Update matching conversation's lastMessage + unread count.
       let conv: Conversation | undefined;

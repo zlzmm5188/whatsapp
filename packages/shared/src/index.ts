@@ -29,6 +29,11 @@ export interface ChatMessage {
   mediaMime: string | null;
   read: boolean;
   createdAt: string; // ISO string
+  // Optional client-side optimistic-UI fields. The server never sets these;
+  // the web client populates them while a message is in flight so the bubble
+  // can render immediately and reconcile on ack.
+  clientId?: string;
+  status?: "pending" | "sent" | "failed";
 }
 
 export interface FriendRequestDTO {

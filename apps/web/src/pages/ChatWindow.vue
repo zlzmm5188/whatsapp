@@ -37,12 +37,13 @@
       <TransitionGroup name="bubble" tag="div" class="space-y-2">
         <MessageBubble
           v-for="m in messages"
-          :key="m.id"
+          :key="m.clientId ?? m.id"
           :message="m"
           :is-mine="m.senderId === meId"
           :me-user="auth.user"
           :sender-user="peer"
           :show-sender-name="false"
+          @retry="onRetry"
         />
       </TransitionGroup>
     </div>
@@ -60,7 +61,7 @@ import { useChatStore, dmKey } from "../stores/chat";
 import Avatar from "../components/Avatar.vue";
 import Composer from "../components/Composer.vue";
 import MessageBubble from "../components/MessageBubble.vue";
-import type { MessageType } from "@im/shared";
+import type { ChatMessage, MessageType } from "@im/shared";
 
 const props = defineProps<{ peerId: string }>();
 
@@ -122,6 +123,11 @@ function onSend(args: {
 
 function onTyping(typing: boolean) {
   chat.sendTypingDM(props.peerId, typing);
+}
+
+function onRetry(msg: ChatMessage) {
+  if (!msg.clientId) return;
+  chat.retrySendDM(props.peerId, msg.clientId);
 }
 
 function goBack() {

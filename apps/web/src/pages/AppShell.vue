@@ -37,7 +37,9 @@
     <main class="flex-1 min-h-0 min-w-0 overflow-hidden relative">
       <RouterView v-slot="{ Component, route }">
         <Transition :name="transitionName(route)" mode="out-in">
-          <component :is="Component" :key="route.fullPath" />
+          <KeepAlive :include="keepAliveNames">
+            <component :is="Component" :key="keepKey(route)" />
+          </KeepAlive>
         </Transition>
       </RouterView>
     </main>
@@ -95,8 +97,29 @@ function isActive(name: string): boolean {
   return route.name === name;
 }
 
+// Keep the main tab pages alive across switches so scroll position, feed
+// state, search input etc. survive tab navigation without a remount flash.
+// Chat/group windows are intentionally NOT cached — each peer or group is
+// its own route and caching them all would leak memory over long sessions.
+const keepAliveNames = [
+  "chats",
+  "chats-empty",
+  "contacts",
+  "moments",
+  "profile",
+];
+
+function keepKey(r: RouteLocationNormalized): string {
+  // For chat/group windows we want a per-target key (different peer = new
+  // component instance + history fetch). For cached tabs a stable key keeps
+  // KeepAlive from re-mounting them.
+  if (r.name === "chat" || r.name === "group-chat") return r.fullPath;
+  return String(r.name ?? r.fullPath);
+}
+
 function transitionName(r: RouteLocationNormalized): string {
-  // No slide inside the chat list (drill-down handled by its own layout).
+  // No transition inside the chat list (drill-down handled by its own
+  // layout and would otherwise double-animate).
   if (r.name === "chat" || r.name === "group-chat" || r.name === "chats-empty") {
     return "";
   }
