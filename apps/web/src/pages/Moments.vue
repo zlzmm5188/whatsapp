@@ -104,12 +104,32 @@
         </section>
       </Transition>
 
-      <!-- Feed -->
+      <!-- Feed loading skeleton — shown instead of a blank screen the first
+           time the feed is fetched. Mimics the real card shape (avatar +
+           two text rows + 3-up image strip) so the visual doesn't jump when
+           real cards slot in. -->
       <div
         v-if="moments.loading && moments.timeline.length === 0"
-        class="text-center text-ink-400 text-sm py-12"
+        class="space-y-3"
+        aria-busy="true"
       >
-        加载中…
+        <div
+          v-for="n in 3"
+          :key="n"
+          class="bg-white rounded-2xl shadow-card px-4 py-4 flex gap-3"
+        >
+          <Skeleton width="40px" height="40px" radius="999px" />
+          <div class="flex-1 space-y-2">
+            <Skeleton width="32%" height="12px" />
+            <Skeleton width="88%" height="10px" />
+            <Skeleton width="72%" height="10px" />
+            <div class="flex gap-1.5 pt-1">
+              <Skeleton width="64px" height="64px" radius="8px" />
+              <Skeleton width="64px" height="64px" radius="8px" />
+              <Skeleton width="64px" height="64px" radius="8px" />
+            </div>
+          </div>
+        </div>
       </div>
       <div
         v-else-if="moments.timeline.length === 0"
@@ -150,10 +170,12 @@
 import { computed, onMounted, ref } from "vue";
 import { Camera, X, Plus, Image as ImageIcon } from "lucide-vue-next";
 import MomentCard from "../components/MomentCard.vue";
+import Skeleton from "../components/Skeleton.vue";
 import { useMomentsStore } from "../stores/moments";
 import { api } from "../api/endpoints";
 import { errorMessage } from "../api/http";
 import { resolveMedia } from "../api/base";
+import { haptic } from "../utils/haptics";
 
 const moments = useMomentsStore();
 
@@ -230,6 +252,7 @@ async function onPost() {
     pendingImages.value = [];
     showComposer.value = false;
     scroller.value?.scrollTo({ top: 0, behavior: "smooth" });
+    haptic("success");
   } catch (e) {
     composerError.value = errorMessage(e);
   } finally {

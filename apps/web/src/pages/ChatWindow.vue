@@ -16,9 +16,10 @@
         <div class="font-medium text-ink-800 truncate">
           {{ peer?.nickname || "聊天" }}
         </div>
-        <div class="text-xs text-ink-400">
+        <div class="text-xs text-ink-400 flex items-center gap-1.5 h-4">
           <template v-if="peer && chat.isDMTyping(peer.id)">
-            对方正在输入…
+            <span>对方正在输入</span>
+            <TypingDots />
           </template>
           <template v-else-if="peer && chat.isOnline(peer.id)">在线</template>
           <template v-else-if="peer">离线</template>
@@ -27,25 +28,43 @@
     </header>
 
     <!-- messages -->
-    <div
-      ref="scrollEl"
-      class="flex-1 overflow-y-auto px-3 md:px-4 py-3 space-y-2"
-    >
-      <div v-if="!messages.length" class="text-center text-ink-400 text-sm py-10">
-        还没有消息，发条消息打个招呼吧
+    <div class="flex-1 min-h-0 relative">
+      <div
+        ref="scrollEl"
+        class="absolute inset-0 overflow-y-auto px-3 md:px-4 py-3 space-y-2"
+        @scroll.passive="onScroll"
+      >
+        <div v-if="!messages.length" class="text-center text-ink-400 text-sm py-10">
+          还没有消息，发条消息打个招呼吧
+        </div>
+        <TransitionGroup name="bubble" tag="div" class="space-y-2">
+          <MessageBubble
+            v-for="m in messages"
+            :key="m.clientId ?? m.id"
+            :message="m"
+            :is-mine="m.senderId === meId"
+            :me-user="auth.user"
+            :sender-user="peer"
+            :show-sender-name="false"
+            @retry="onRetry"
+          />
+        </TransitionGroup>
       </div>
-      <TransitionGroup name="bubble" tag="div" class="space-y-2">
-        <MessageBubble
-          v-for="m in messages"
-          :key="m.clientId ?? m.id"
-          :message="m"
-          :is-mine="m.senderId === meId"
-          :me-user="auth.user"
-          :sender-user="peer"
-          :show-sender-name="false"
-          @retry="onRetry"
-        />
-      </TransitionGroup>
+
+      <!-- Jump to latest: appears when user scrolls up past the threshold.
+           Clicking (or sending a new message) returns to the tail. -->
+      <Transition name="fade">
+        <button
+          v-if="showJumpToLatest"
+          type="button"
+          class="pressable absolute left-1/2 bottom-3 -translate-x-1/2 px-3 py-1.5 rounded-full bg-white shadow-card text-xs text-ink-700 flex items-center gap-1"
+          @click="jumpToLatest"
+        >
+          <ChevronDown class="w-4 h-4" :stroke-width="2.25" />
+          <span v-if="unseenBelow > 0">{{ unseenBelow }} 条新消息</span>
+          <span v-else>回到最新</span>
+        </button>
+      </Transition>
     </div>
 
     <Composer :on-send="onSend" :on-typing="onTyping" />
@@ -53,14 +72,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  ref,
+  watch,
+} from "vue";
 import { useRouter } from "vue-router";
-import { ChevronLeft } from "lucide-vue-next";
+import { ChevronLeft, ChevronDown } from "lucide-vue-next";
 import { useAuthStore } from "../stores/auth";
 import { useChatStore, dmKey } from "../stores/chat";
 import Avatar from "../components/Avatar.vue";
 import Composer from "../components/Composer.vue";
 import MessageBubble from "../components/MessageBubble.vue";
+import TypingDots from "../components/TypingDots.vue";
+import { haptic } from "../utils/haptics";
 import type { ChatMessage, MessageType } from "@im/shared";
 
 const props = defineProps<{ peerId: string }>();
@@ -70,6 +99,16 @@ const chat = useChatStore();
 const router = useRouter();
 
 const scrollEl = ref<HTMLDivElement | null>(null);
+
+// "Near bottom" threshold in px — if the user is within this distance of
+// the tail, new messages auto-scroll; otherwise we show the jump button
+// instead of yanking them away from the message they're reading.
+const NEAR_BOTTOM_PX = 80;
+const atBottom = ref(true);
+const unseenBelow = ref(0);
+const showJumpToLatest = computed(
+  () => !atBottom.value && messages.value.length > 0,
+);
 
 const meId = computed(() => auth.user?.id ?? null);
 
@@ -87,42 +126,62 @@ watch(
   async (peerId) => {
     if (!peerId) return;
     await chat.openDM(peerId);
-    await scrollToBottom();
+    atBottom.value = true;
+    unseenBelow.value = 0;
+    await scrollToBottom(false);
   },
   { immediate: true },
 );
 
+// When a new message lands, only auto-scroll if the user was already near
+// the bottom OR if the latest message is their own (you always want to see
+// what you just sent). Otherwise, count it as unseen.
 watch(
   () => messages.value.length,
-  async () => {
-    await scrollToBottom();
+  async (newLen, oldLen) => {
+    if (newLen <= (oldLen ?? 0)) return;
+    const last = messages.value[messages.value.length - 1];
+    const mine = !!last && last.senderId === meId.value;
+    if (mine || atBottom.value) {
+      await scrollToBottom(true);
+      atBottom.value = true;
+      unseenBelow.value = 0;
+    } else {
+      unseenBelow.value += newLen - (oldLen ?? 0);
+    }
   },
 );
 
-// Clear activeKey on both unmount (peer switch within /c/*) and deactivate
-// (whole Chats subtree put to sleep by KeepAlive when user leaves the chats
-// tab). Without onDeactivated the store's activeKey stays pointed at the
-// hidden chat, so incoming messages there would keep auto-mark-read and
-// their unreadCount would never increment.
 onBeforeUnmount(() => {
   chat.closeChat();
 });
 onDeactivated(() => {
   chat.closeChat();
 });
-// Re-open the DM when the user swipes back into the chats tab (KeepAlive
-// keeps the component mounted, so the immediate watcher won't fire again
-// because peerId hasn't changed). openDM short-circuits on historyLoaded,
-// so this just restores activeKey and re-marks-read.
 onActivated(() => {
   if (props.peerId) void chat.openDM(props.peerId);
 });
 
-async function scrollToBottom() {
+function onScroll(): void {
+  const el = scrollEl.value;
+  if (!el) return;
+  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+  const near = distanceFromBottom <= NEAR_BOTTOM_PX;
+  atBottom.value = near;
+  if (near) unseenBelow.value = 0;
+}
+
+async function scrollToBottom(smooth: boolean): Promise<void> {
   await nextTick();
   const el = scrollEl.value;
   if (!el) return;
-  el.scrollTop = el.scrollHeight;
+  el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+}
+
+function jumpToLatest(): void {
+  atBottom.value = true;
+  unseenBelow.value = 0;
+  void scrollToBottom(true);
 }
 
 function onSend(args: {
@@ -133,6 +192,7 @@ function onSend(args: {
   mediaSize?: number;
   mediaMime?: string;
 }) {
+  haptic("tap");
   chat.sendDM(props.peerId, args);
 }
 

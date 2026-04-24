@@ -200,6 +200,7 @@ import { useMomentsStore } from "../stores/moments";
 import { errorMessage } from "../api/http";
 import { resolveMedia } from "../api/base";
 import { formatRelative } from "../utils/time";
+import { haptic } from "../utils/haptics";
 import type { MomentDTO } from "@im/shared";
 
 const props = defineProps<{
@@ -228,6 +229,7 @@ function canDeleteComment(authorId: string): boolean {
 async function onLike() {
   if (liking.value) return;
   liking.value = true;
+  haptic(props.moment.likedByMe ? "tap" : "success");
   try {
     await store.toggleLike(props.moment.id);
   } catch (e) {
