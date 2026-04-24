@@ -130,6 +130,7 @@
 import type { ChatMessage, PublicUser } from "@im/shared";
 import { File as FileIcon, Loader2, AlertCircle } from "lucide-vue-next";
 import Avatar from "./Avatar.vue";
+import { resolveMedia as resolveBackendMedia } from "@/api/base";
 
 defineProps<{
   message: ChatMessage;
@@ -144,7 +145,7 @@ defineEmits<{
 }>();
 
 function resolveMedia(url: string): string {
-  return url;
+  return resolveBackendMedia(url);
 }
 
 function formatSize(bytes: number | null): string {

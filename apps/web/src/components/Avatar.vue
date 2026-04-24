@@ -6,7 +6,7 @@
   >
     <img
       v-if="user.avatar"
-      :src="user.avatar"
+      :src="resolveMedia(user.avatar)"
       :alt="user.nickname"
       class="w-full h-full object-cover"
     />
@@ -21,6 +21,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { PublicUser } from "@im/shared";
+import { resolveMedia } from "../api/base";
 
 const props = withDefaults(
   defineProps<{

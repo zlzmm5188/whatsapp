@@ -44,7 +44,7 @@
               class="relative aspect-square group"
             >
               <img
-                :src="img.url"
+                :src="resolveMedia(img.url)"
                 class="w-full h-full object-cover rounded-lg"
               />
               <button
@@ -153,6 +153,7 @@ import MomentCard from "../components/MomentCard.vue";
 import { useMomentsStore } from "../stores/moments";
 import { api } from "../api/endpoints";
 import { errorMessage } from "../api/http";
+import { resolveMedia } from "../api/base";
 
 const moments = useMomentsStore();
 
