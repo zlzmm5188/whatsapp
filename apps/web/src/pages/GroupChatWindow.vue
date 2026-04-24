@@ -152,9 +152,9 @@ watch(
   () => props.groupId,
   async (gid) => {
     if (!gid) return;
-    await chat.openGroup(gid);
     atBottom.value = true;
     unseenBelow.value = 0;
+    await chat.openGroup(gid);
     await scrollToBottom(false);
   },
   { immediate: true },

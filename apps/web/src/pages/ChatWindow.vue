@@ -125,9 +125,9 @@ watch(
   () => props.peerId,
   async (peerId) => {
     if (!peerId) return;
-    await chat.openDM(peerId);
     atBottom.value = true;
     unseenBelow.value = 0;
+    await chat.openDM(peerId);
     await scrollToBottom(false);
   },
   { immediate: true },
