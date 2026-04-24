@@ -15,6 +15,8 @@
   --brand: #07c160;
   --brand-600: #06a652;
   --brand-50: #e8fbf1;
+  --ease-out-ios: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-ios: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 html,
@@ -89,12 +91,46 @@ select {
   }
 }
 
-/* -------- Route transitions (iOS-style slide) -------- */
+/* -------- Route transitions --------
+ * Fade is used for tab switches. Keep timings short (120ms) so switching
+ * between Chats/Contacts/Moments feels instant but not hard-cut. */
+.fade-enter-active,
+.fade-leave-active {
+  transition:
+    opacity 120ms ease,
+    transform 120ms var(--ease-out-ios);
+}
+.fade-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(-2px);
+}
+
+/* Horizontal slide for chat list → chat window drill-down on mobile. */
+.slide-enter-active,
+.slide-leave-active {
+  transition:
+    opacity 200ms ease,
+    transform 240ms var(--ease-in-out-ios);
+}
+.slide-enter-from {
+  opacity: 0;
+  transform: translateX(8%);
+}
+.slide-leave-to {
+  opacity: 0;
+  transform: translateX(-4%);
+}
+
+/* Legacy page name kept in case any component still references it. */
 .page-enter-active,
 .page-leave-active {
   transition:
-    opacity 180ms ease,
-    transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+    opacity 150ms ease,
+    transform 180ms var(--ease-in-out-ios);
 }
 .page-enter-from {
   opacity: 0;
@@ -105,24 +141,17 @@ select {
   transform: translateX(-4%);
 }
 
-/* Fade for in-place swaps (tab content). */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 150ms ease;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
 /* -------- Message bubble entry -------- */
 .bubble-enter-active {
-  animation: bubble-pop 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: bubble-pop 160ms var(--ease-out-ios);
+}
+.bubble-move {
+  transition: transform 180ms var(--ease-out-ios);
 }
 @keyframes bubble-pop {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.96);
+    transform: translateY(4px) scale(0.98);
   }
   to {
     opacity: 1;
@@ -132,12 +161,15 @@ select {
 
 /* -------- Moments card entry -------- */
 .moment-enter-active {
-  animation: moment-fade 220ms ease both;
+  animation: moment-fade 180ms ease both;
+}
+.moment-move {
+  transition: transform 220ms var(--ease-out-ios);
 }
 @keyframes moment-fade {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -145,7 +177,7 @@ select {
   }
 }
 
-/* Safe-area helpers (used as utility classes). */
+/* Safe-area helpers. */
 .pt-safe {
   padding-top: max(env(safe-area-inset-top), 0px);
 }
@@ -168,27 +200,130 @@ select {
   min-height: 100dvh;
 }
 
-/* iOS-native-like pressable state for any element. */
+/* iOS-native-like pressable state. Slightly faster and more subtle. */
 .pressable {
   transition:
-    transform 80ms ease,
-    background-color 150ms ease,
-    opacity 150ms ease;
+    transform 70ms ease,
+    background-color 120ms ease,
+    opacity 120ms ease;
+  -webkit-touch-callout: none;
 }
 .pressable:active {
-  transform: scale(0.97);
+  transform: scale(0.96);
 }
 
-/* Soft shadow utility to match iOS cards. */
+/* Shadows — defined as raw rules so they always land regardless of
+ * Tailwind JIT scan state. */
 .shadow-card {
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.04),
     0 8px 24px rgba(0, 0, 0, 0.05);
 }
+.shadow-bubble {
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.shadow-brand {
+  box-shadow:
+    0 4px 14px rgba(7, 193, 96, 0.24),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.shadow-nav {
+  box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.06);
+}
 
-/* Glass top-bar backdrop (used on mobile headers). */
+/* Glass top-bar backdrop. */
 .bg-glass {
   background-color: rgba(255, 255, 255, 0.85);
   backdrop-filter: saturate(180%) blur(14px);
   -webkit-backdrop-filter: saturate(180%) blur(14px);
+}
+.bg-glass-dark {
+  background-color: rgba(17, 24, 39, 0.72);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+}
+
+/* -------- Perf: cv-auto for long lists --------
+ * Browsers will skip rendering off-screen children entirely once set, which
+ * lets long chat histories and moment feeds stay at 60fps while scrolling.
+ * `contain-intrinsic-size` gives the browser a size estimate so scrollbars
+ * don't jump around as items paint in. */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 64px;
+}
+.cv-auto-lg {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 320px;
+}
+
+/* -------- Optimistic message states -------- */
+.msg-pending {
+  opacity: 0.72;
+}
+.msg-failed {
+  outline: 1px dashed rgba(239, 68, 68, 0.6);
+  outline-offset: 1px;
+}
+
+/* Spinner used for in-flight states. */
+@keyframes spin-ios {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin-ios {
+  animation: spin-ios 0.8s linear infinite;
+}
+
+/* Tiny pulse used for "sending..." dots etc. */
+@keyframes pulse-dim {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.pulse-dim {
+  animation: pulse-dim 1.2s ease-in-out infinite;
+}
+
+/* Skeleton shimmer. */
+@keyframes shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.05) 0%,
+    rgba(0, 0, 0, 0.09) 40%,
+    rgba(0, 0, 0, 0.05) 80%
+  );
+  background-size: 200px 100%;
+  animation: shimmer 1.2s linear infinite;
+  border-radius: 8px;
+}
+
+/* When pressing the send button, give a subtle micro-interaction hook. */
+.send-fab {
+  transition:
+    transform 120ms var(--ease-out-ios),
+    background-color 120ms ease;
+}
+.send-fab:active {
+  transform: scale(0.9) rotate(-4deg);
+}
+
+/* Disable long-press callout / image save UI on chat images. */
+img {
+  -webkit-user-drag: none;
 }

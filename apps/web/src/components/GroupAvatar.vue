@@ -6,7 +6,7 @@
   >
     <img
       v-if="group.avatar"
-      :src="group.avatar"
+      :src="resolveMedia(group.avatar)"
       :alt="group.name"
       class="w-full h-full object-cover"
     />
@@ -18,6 +18,7 @@
 import { computed } from "vue";
 import { Users } from "lucide-vue-next";
 import type { GroupSummary } from "@im/shared";
+import { resolveMedia } from "../api/base";
 
 const props = withDefaults(
   defineProps<{

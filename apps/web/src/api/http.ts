@@ -1,7 +1,8 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
+import { BACKEND_ORIGIN } from "./base";
 
 export const http = axios.create({
-  baseURL: "/api",
+  baseURL: `${BACKEND_ORIGIN}/api`,
   timeout: 15000,
 });
 

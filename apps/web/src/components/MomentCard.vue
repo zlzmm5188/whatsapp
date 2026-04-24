@@ -25,7 +25,7 @@
           class="rounded-xl overflow-hidden max-w-xs"
         >
           <img
-            :src="moment.images[0]!.url"
+            :src="resolveMedia(moment.images[0]!.url)"
             class="w-full max-h-80 object-cover cursor-pointer"
             loading="lazy"
             @click="openLightbox(0)"
@@ -41,7 +41,7 @@
           <img
             v-for="(img, i) in moment.images"
             :key="img.id"
-            :src="img.url"
+            :src="resolveMedia(img.url)"
             class="aspect-square object-cover rounded-lg cursor-pointer"
             loading="lazy"
             @click="openLightbox(i)"
@@ -183,7 +183,7 @@
           <X class="w-5 h-5" :stroke-width="2" />
         </button>
         <img
-          :src="moment.images[lightboxIdx]?.url ?? ''"
+          :src="resolveMedia(moment.images[lightboxIdx]?.url ?? '')"
           class="max-w-full max-h-full object-contain"
         />
       </div>
@@ -198,7 +198,9 @@ import Avatar from "./Avatar.vue";
 import { useAuthStore } from "../stores/auth";
 import { useMomentsStore } from "../stores/moments";
 import { errorMessage } from "../api/http";
+import { resolveMedia } from "../api/base";
 import { formatRelative } from "../utils/time";
+import { haptic } from "../utils/haptics";
 import type { MomentDTO } from "@im/shared";
 
 const props = defineProps<{
@@ -227,6 +229,7 @@ function canDeleteComment(authorId: string): boolean {
 async function onLike() {
   if (liking.value) return;
   liking.value = true;
+  haptic(props.moment.likedByMe ? "tap" : "success");
   try {
     await store.toggleLike(props.moment.id);
   } catch (e) {

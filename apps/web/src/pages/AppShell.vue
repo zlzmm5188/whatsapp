@@ -37,7 +37,9 @@
     <main class="flex-1 min-h-0 min-w-0 overflow-hidden relative">
       <RouterView v-slot="{ Component, route }">
         <Transition :name="transitionName(route)" mode="out-in">
-          <component :is="Component" :key="route.fullPath" />
+          <KeepAlive :include="keepAliveNames">
+            <component :is="Component" :key="keepKey(route)" />
+          </KeepAlive>
         </Transition>
       </RouterView>
     </main>
@@ -95,8 +97,32 @@ function isActive(name: string): boolean {
   return route.name === name;
 }
 
+// Keep the main tab pages alive across switches so scroll position, feed
+// state, search input etc. survive tab navigation without a remount flash.
+// NOTE: <KeepAlive :include> matches *component* names (not route names).
+// With <script setup> + @vitejs/plugin-vue on Vue 3.5, the component name
+// is inferred from the filename in PascalCase, so these strings must match
+// the .vue filenames (Chats.vue → "Chats"), NOT the lowercase route names.
+// EmptyChat / ChatWindow / GroupChatWindow are nested children of Chats and
+// are rendered by the inner <RouterView> inside Chats.vue — at the AppShell
+// level the component is always Chats for the whole chats-family, so they
+// MUST NOT be listed here and Chats MUST be keyed stably (see keepKey).
+const keepAliveNames = ["Chats", "Contacts", "Moments", "Profile"];
+
+function keepKey(r: RouteLocationNormalized): string {
+  // All chat-family routes (chats / chats-empty / chat / group-chat) resolve
+  // to the same AppShell-level component (Chats). Return a STABLE key for
+  // them so KeepAlive reuses one cached Chats instance instead of creating
+  // a fresh one per visited peer — that would be an unbounded memory leak
+  // and would also prevent ChatWindow from ever unmounting / calling
+  // chat.closeChat(), leaving activeKey stale and breaking unread counts.
+  if (r.matched.some((m) => m.name === "chats")) return "chats";
+  return String(r.name ?? r.fullPath);
+}
+
 function transitionName(r: RouteLocationNormalized): string {
-  // No slide inside the chat list (drill-down handled by its own layout).
+  // No transition inside the chat list (drill-down handled by its own
+  // layout and would otherwise double-animate).
   if (r.name === "chat" || r.name === "group-chat" || r.name === "chats-empty") {
     return "";
   }
