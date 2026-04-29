@@ -105,6 +105,16 @@ export const SocketEvents = {
   MomentLikeChanged: "moment:like:changed",
   MomentCommentAdded: "moment:comment:added",
   MomentCommentDeleted: "moment:comment:deleted",
+  // call signaling (1:1 audio/video). The server is a dumb relay between
+  // two friends — it does not store SDP/ICE; it just forwards.
+  CallInvite: "call:invite", // client -> server, server -> callee
+  CallAccept: "call:accept", // callee -> server -> caller
+  CallReject: "call:reject", // callee -> server -> caller
+  CallCancel: "call:cancel", // caller -> server -> callee (caller hung up before accept)
+  CallEnd: "call:end", // either side -> server -> peer (in-call hangup)
+  CallSdp: "call:sdp", // forward offer/answer SDP between peers
+  CallIce: "call:ice", // forward ICE candidates between peers
+  CallBusy: "call:busy", // server -> caller when callee is in another call
 } as const;
 
 export interface SendMessagePayload {
@@ -211,4 +221,71 @@ export interface MomentCommentDeletedPayload {
 
 export interface MomentDeletedPayload {
   momentId: string;
+}
+
+// ---------------- Calls (1:1 audio/video) ----------------
+
+export type CallKind = "audio" | "video";
+
+// Client -> server: caller initiates a call.
+export interface CallInvitePayload {
+  callId: string;
+  peerId: string; // callee user id
+  kind: CallKind;
+}
+
+// Server -> callee: incoming call (server enriches with caller PublicUser).
+export interface IncomingCallPayload {
+  callId: string;
+  fromUser: PublicUser;
+  kind: CallKind;
+}
+
+// Either side -> server, then forwarded to the other peer.
+export interface CallAcceptPayload {
+  callId: string;
+  peerId: string;
+}
+export interface CallRejectPayload {
+  callId: string;
+  peerId: string;
+  reason?: "declined" | "busy" | "timeout";
+}
+export interface CallCancelPayload {
+  callId: string;
+  peerId: string;
+}
+export interface CallEndPayload {
+  callId: string;
+  peerId: string;
+}
+
+// SDP and ICE forwarding. The server does not parse — just relays. We use
+// structural types here instead of the DOM `RTCSessionDescriptionInit` /
+// `RTCIceCandidateInit` so this package can compile without DOM lib.
+export interface SdpDescription {
+  type: "offer" | "answer" | "pranswer" | "rollback";
+  sdp?: string;
+}
+export interface IceCandidate {
+  candidate?: string;
+  sdpMid?: string | null;
+  sdpMLineIndex?: number | null;
+  usernameFragment?: string | null;
+}
+export interface CallSdpPayload {
+  callId: string;
+  peerId: string;
+  sdp: SdpDescription;
+}
+export interface CallIcePayload {
+  callId: string;
+  peerId: string;
+  candidate: IceCandidate;
+}
+
+// Server -> caller when callee already has a call in progress.
+export interface CallBusyPayload {
+  callId: string;
+  peerId: string; // the one who is busy
 }

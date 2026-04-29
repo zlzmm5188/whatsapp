@@ -27,7 +27,7 @@ const props = withDefaults(
   defineProps<{
     user: PublicUser;
     online?: boolean;
-    size?: "xs" | "sm" | "md" | "lg";
+    size?: "xs" | "sm" | "md" | "lg" | "xl";
     square?: boolean;
   }>(),
   { online: false, size: "md", square: false },
@@ -45,6 +45,8 @@ const sizeClass = computed(() => {
       return "w-8 h-8 text-sm";
     case "lg":
       return "w-16 h-16 text-2xl";
+    case "xl":
+      return "w-24 h-24 text-3xl";
     default:
       return "w-11 h-11 text-base";
   }

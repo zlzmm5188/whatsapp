@@ -13,7 +13,16 @@ import { AuthService } from "../auth/auth.service";
 import { FriendsService } from "../friends/friends.service";
 import { MessagesService } from "../messages/messages.service";
 import { GroupsService } from "../groups/groups.service";
+import { UsersService } from "../users/users.service";
 import {
+  CallAcceptPayload,
+  CallCancelPayload,
+  CallEndPayload,
+  CallIcePayload,
+  CallInvitePayload,
+  CallRejectPayload,
+  CallSdpPayload,
+  IncomingCallPayload,
   MarkReadPayload,
   SendMessagePayload,
   SocketEvents,
@@ -41,9 +50,18 @@ export class ChatGateway
   // userId -> set of socket ids
   private readonly sockets = new Map<string, Set<string>>();
 
+  // Active calls: callId -> { caller, callee }. Used for in-call routing
+  // and to detect "busy" state when a new invite arrives for someone who
+  // already has a call.
+  private readonly activeCalls = new Map<
+    string,
+    { caller: string; callee: string }
+  >();
+
   constructor(
     private readonly auth: AuthService,
     private readonly friends: FriendsService,
+    private readonly users: UsersService,
     @Inject(forwardRef(() => MessagesService))
     private readonly messages: MessagesService,
     @Inject(forwardRef(() => GroupsService))
@@ -103,6 +121,18 @@ export class ChatGateway
     }
     this.logger.log(`user ${userId} disconnected (${socket.id})`);
     if (wentOffline) {
+      // End any active calls this user was part of: notify the peer so
+      // they can tear down their RTCPeerConnection and stop ringing.
+      for (const [callId, call] of this.activeCalls) {
+        if (call.caller === userId || call.callee === userId) {
+          const peerId = call.caller === userId ? call.callee : call.caller;
+          this.server.to(`user:${peerId}`).emit(SocketEvents.CallEnd, {
+            callId,
+            peerId: userId,
+          });
+          this.activeCalls.delete(callId);
+        }
+      }
       await this.broadcastPresence(userId, false);
     }
   }
@@ -186,6 +216,175 @@ export class ChatGateway
           typing: !!payload.typing,
         });
     }
+  }
+
+  // ---- Call signaling (1:1 audio/video). The server is a dumb relay:
+  // it validates that two users are friends and routes events between them.
+  // It does NOT keep media; WebRTC traffic flows P2P (via TURN if needed).
+
+  @SubscribeMessage(SocketEvents.CallInvite)
+  async onCallInvite(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: CallInvitePayload,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const userId = (socket as AuthedSocket).data.userId;
+    if (!payload?.callId || !payload?.peerId || !payload?.kind) {
+      return { ok: false, error: "invalid payload" };
+    }
+    if (payload.peerId === userId) {
+      return { ok: false, error: "cannot call self" };
+    }
+    const friends = await this.friends.areFriends(userId, payload.peerId);
+    if (!friends) return { ok: false, error: "not friends" };
+
+    // If callee is already in another call, signal busy back to caller
+    // and don't ring.
+    const calleeBusy = Array.from(this.activeCalls.values()).some(
+      (c) => c.caller === payload.peerId || c.callee === payload.peerId,
+    );
+    if (calleeBusy) {
+      socket.emit(SocketEvents.CallBusy, {
+        callId: payload.callId,
+        peerId: payload.peerId,
+      });
+      return { ok: false, error: "busy" };
+    }
+
+    const fromUser = await this.users.getById(userId);
+    if (!fromUser) return { ok: false, error: "caller not found" };
+
+    this.activeCalls.set(payload.callId, {
+      caller: userId,
+      callee: payload.peerId,
+    });
+
+    const incoming: IncomingCallPayload = {
+      callId: payload.callId,
+      fromUser,
+      kind: payload.kind,
+    };
+    this.server
+      .to(`user:${payload.peerId}`)
+      .emit(SocketEvents.CallInvite, incoming);
+    return { ok: true };
+  }
+
+  @SubscribeMessage(SocketEvents.CallAccept)
+  onCallAccept(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: CallAcceptPayload,
+  ): { ok: boolean } {
+    const userId = (socket as AuthedSocket).data.userId;
+    if (!this.isCallParticipant(payload?.callId, userId, payload?.peerId)) {
+      return { ok: false };
+    }
+    this.server.to(`user:${payload.peerId}`).emit(SocketEvents.CallAccept, {
+      callId: payload.callId,
+      peerId: userId,
+    });
+    return { ok: true };
+  }
+
+  @SubscribeMessage(SocketEvents.CallReject)
+  onCallReject(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: CallRejectPayload,
+  ): { ok: boolean } {
+    const userId = (socket as AuthedSocket).data.userId;
+    if (!this.isCallParticipant(payload?.callId, userId, payload?.peerId)) {
+      return { ok: false };
+    }
+    this.activeCalls.delete(payload.callId);
+    this.server.to(`user:${payload.peerId}`).emit(SocketEvents.CallReject, {
+      callId: payload.callId,
+      peerId: userId,
+      reason: payload.reason ?? "declined",
+    });
+    return { ok: true };
+  }
+
+  @SubscribeMessage(SocketEvents.CallCancel)
+  onCallCancel(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: CallCancelPayload,
+  ): { ok: boolean } {
+    const userId = (socket as AuthedSocket).data.userId;
+    if (!this.isCallParticipant(payload?.callId, userId, payload?.peerId)) {
+      return { ok: false };
+    }
+    this.activeCalls.delete(payload.callId);
+    this.server.to(`user:${payload.peerId}`).emit(SocketEvents.CallCancel, {
+      callId: payload.callId,
+      peerId: userId,
+    });
+    return { ok: true };
+  }
+
+  @SubscribeMessage(SocketEvents.CallEnd)
+  onCallEnd(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: CallEndPayload,
+  ): { ok: boolean } {
+    const userId = (socket as AuthedSocket).data.userId;
+    if (!this.isCallParticipant(payload?.callId, userId, payload?.peerId)) {
+      return { ok: false };
+    }
+    this.activeCalls.delete(payload.callId);
+    this.server.to(`user:${payload.peerId}`).emit(SocketEvents.CallEnd, {
+      callId: payload.callId,
+      peerId: userId,
+    });
+    return { ok: true };
+  }
+
+  @SubscribeMessage(SocketEvents.CallSdp)
+  onCallSdp(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: CallSdpPayload,
+  ): { ok: boolean } {
+    const userId = (socket as AuthedSocket).data.userId;
+    if (!this.isCallParticipant(payload?.callId, userId, payload?.peerId)) {
+      return { ok: false };
+    }
+    this.server.to(`user:${payload.peerId}`).emit(SocketEvents.CallSdp, {
+      callId: payload.callId,
+      peerId: userId,
+      sdp: payload.sdp,
+    });
+    return { ok: true };
+  }
+
+  @SubscribeMessage(SocketEvents.CallIce)
+  onCallIce(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: CallIcePayload,
+  ): { ok: boolean } {
+    const userId = (socket as AuthedSocket).data.userId;
+    if (!this.isCallParticipant(payload?.callId, userId, payload?.peerId)) {
+      return { ok: false };
+    }
+    this.server.to(`user:${payload.peerId}`).emit(SocketEvents.CallIce, {
+      callId: payload.callId,
+      peerId: userId,
+      candidate: payload.candidate,
+    });
+    return { ok: true };
+  }
+
+  // Confirms (a) the call exists, (b) the sender is one of the two
+  // participants, and (c) the claimed `peerId` is the other participant.
+  // Prevents one user from spoofing signaling to a third party.
+  private isCallParticipant(
+    callId: string | undefined,
+    senderId: string,
+    claimedPeerId: string | undefined,
+  ): boolean {
+    if (!callId || !claimedPeerId) return false;
+    const call = this.activeCalls.get(callId);
+    if (!call) return false;
+    if (call.caller === senderId && call.callee === claimedPeerId) return true;
+    if (call.callee === senderId && call.caller === claimedPeerId) return true;
+    return false;
   }
 
   // --- Helpers used by GroupsService to emit on membership changes ---

@@ -25,6 +25,28 @@
           <template v-else-if="peer">离线</template>
         </div>
       </div>
+      <!-- Voice / video call buttons. Disabled while another call is in
+           progress (the store guards against concurrent calls anyway). -->
+      <button
+        v-if="peer"
+        type="button"
+        class="pressable w-9 h-9 flex items-center justify-center rounded-full text-ink-700 hover:bg-black/5 disabled:opacity-40 disabled:cursor-not-allowed"
+        :disabled="call.inCall"
+        title="语音通话"
+        @click="onAudioCall"
+      >
+        <Phone class="w-5 h-5" :stroke-width="2" />
+      </button>
+      <button
+        v-if="peer"
+        type="button"
+        class="pressable w-9 h-9 flex items-center justify-center rounded-full text-ink-700 hover:bg-black/5 disabled:opacity-40 disabled:cursor-not-allowed"
+        :disabled="call.inCall"
+        title="视频通话"
+        @click="onVideoCall"
+      >
+        <Video class="w-5 h-5" :stroke-width="2" />
+      </button>
     </header>
 
     <!-- messages -->
@@ -82,9 +104,10 @@ import {
   watch,
 } from "vue";
 import { useRouter } from "vue-router";
-import { ChevronLeft, ChevronDown } from "lucide-vue-next";
+import { ChevronLeft, ChevronDown, Phone, Video } from "lucide-vue-next";
 import { useAuthStore } from "../stores/auth";
 import { useChatStore, dmKey } from "../stores/chat";
+import { useCallStore } from "../stores/call";
 import Avatar from "../components/Avatar.vue";
 import Composer from "../components/Composer.vue";
 import MessageBubble from "../components/MessageBubble.vue";
@@ -96,7 +119,17 @@ const props = defineProps<{ peerId: string }>();
 
 const auth = useAuthStore();
 const chat = useChatStore();
+const call = useCallStore();
 const router = useRouter();
+
+async function onAudioCall(): Promise<void> {
+  if (!peer.value || call.inCall) return;
+  await call.invite(peer.value, "audio");
+}
+async function onVideoCall(): Promise<void> {
+  if (!peer.value || call.inCall) return;
+  await call.invite(peer.value, "video");
+}
 
 const scrollEl = ref<HTMLDivElement | null>(null);
 
