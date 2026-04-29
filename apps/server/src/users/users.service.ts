@@ -29,6 +29,11 @@ export class UsersService {
     return users.map(toPublicUser);
   }
 
+  async getById(userId: string): Promise<PublicUser | null> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    return user ? toPublicUser(user) : null;
+  }
+
   async updateProfile(
     userId: string,
     data: {
